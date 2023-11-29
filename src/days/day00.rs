@@ -15,6 +15,16 @@ impl Day for Day0 {
     }
 
     fn part2(&self) -> Option<String> {
-        Some("Hello, world!".to_string())
+        None
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_part1() {
+        assert_eq!(Some("Hello, world!".to_string()), super::Day0.part1());
     }
 }
