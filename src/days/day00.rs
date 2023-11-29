@@ -1,4 +1,7 @@
+// Day 0 - Template
+
 use crate::framework::Day;
+use crate::prelude::*;
 
 pub struct Day0;
 
