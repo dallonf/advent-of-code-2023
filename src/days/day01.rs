@@ -14,12 +14,12 @@ impl Day for Day1 {
         1
     }
 
-    fn part1(&self) -> Option<String> {
-        let result = sum_of_calibration_values(&PUZZLE_INPUT).unwrap();
-        Some(result.to_string())
+    fn part1(&self) -> Option<Result<String>> {
+        let result = sum_of_calibration_values(&PUZZLE_INPUT);
+        Some(result.map(|it| it.to_string()))
     }
 
-    fn part2(&self) -> Option<String> {
+    fn part2(&self) -> Option<Result<String>> {
         None
     }
 }
@@ -45,7 +45,7 @@ mod test {
 
     #[test]
     fn test_part1() {
-        assert_eq!(Some("54634".to_string()), super::Day1.part1());
+        assert_eq!("54634".to_string(), super::Day1.part1().unwrap().unwrap());
     }
 
     #[test]

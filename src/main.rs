@@ -13,10 +13,18 @@ fn main() {
 
     for day in days.iter() {
         if let Some(output) = day.part1() {
-            println!("Day {}, part 1: {}", day.day_number(), output);
+            println!(
+                "Day {}, part 1: {}",
+                day.day_number(),
+                output.unwrap_or_else(|err| err.to_string())
+            );
         }
         if let Some(output) = day.part2() {
-            println!("Day {}, part 2: {}", day.day_number(), output);
+            println!(
+                "Day {}, part 2: {}",
+                day.day_number(),
+                output.unwrap_or_else(|err| err.to_string())
+            );
         }
     }
 }
