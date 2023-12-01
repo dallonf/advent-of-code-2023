@@ -58,7 +58,6 @@ fn get_calibration_value_mk2(line: &str) -> Result<u32> {
         .get(1)
         .unwrap()
         .as_str();
-    println!("digits for {line}: {first_digit_capture} and {last_digit_capture}");
     let first = digit(first_digit_capture)?;
     let last = digit(last_digit_capture)?;
     Ok(first * 10 + last)
@@ -82,6 +81,7 @@ fn digit(input: &str) -> Result<u32> {
 fn sum_of_calibration_values_mk2(input: &str) -> Result<u32> {
     input
         .lines()
+        .par_bridge()
         .map(|line| get_calibration_value_mk2(line))
         .sum::<Result<u32>>()
 }
