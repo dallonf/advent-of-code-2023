@@ -3,13 +3,18 @@ use crate::framework::Day;
 mod days {
     pub mod day00;
     pub mod day01;
+    pub mod day02;
 }
 mod framework;
 
 use framework::prelude;
 
 fn main() {
-    let days: Vec<Box<dyn Day>> = vec![Box::new(days::day00::Day0), Box::new(days::day01::Day1)];
+    let days: Vec<Box<dyn Day>> = vec![
+        Box::new(days::day00::Day0),
+        Box::new(days::day01::Day1),
+        Box::new(days::day02::Day2),
+    ];
 
     for day in days.iter() {
         if let Some(output) = day.part1() {
