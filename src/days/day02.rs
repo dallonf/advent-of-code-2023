@@ -34,7 +34,13 @@ impl Day for Day2 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        let games = match puzzle_input() {
+            Result::Ok(games) => games,
+            Err(err) => return Some(Err(err)),
+        };
+        let powers = games.iter().map(|game| game.power());
+        let sum = powers.sum::<u32>();
+        Some(Ok(sum.to_string()))
     }
 }
 
@@ -54,6 +60,16 @@ struct Game {
 impl Game {
     fn is_possible_with_inventory(&self, inventory: &Inventory) -> bool {
         self.pulls.iter().all(|pull| pull.fits_in(inventory))
+    }
+
+    fn power(&self) -> u32 {
+        let mut minimum_inventory = Inventory::default();
+        for pull in &self.pulls {
+            minimum_inventory.red = minimum_inventory.red.max(pull.red);
+            minimum_inventory.green = minimum_inventory.green.max(pull.green);
+            minimum_inventory.blue = minimum_inventory.blue.max(pull.blue);
+        }
+        minimum_inventory.red * minimum_inventory.green * minimum_inventory.blue
     }
 }
 
@@ -143,12 +159,28 @@ mod test {
 
     use super::*;
 
+    fn test_input() -> Vec<Game> {
+        indoc! {"
+            Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
+            Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
+            Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
+            Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
+            Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green
+        "}
+        .lines()
+        .map(Game::from_str)
+        .collect::<Result<Vec<_>>>()
+        .unwrap()
+    }
+
     #[test]
     fn test_part1() {
-        assert_eq!(
-            "2505".to_string(),
-            super::Day2.part1().unwrap().unwrap()
-        );
+        assert_eq!("2505".to_string(), super::Day2.part1().unwrap().unwrap());
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!("70265".to_string(), super::Day2.part2().unwrap().unwrap());
     }
 
     #[test]
@@ -204,24 +236,20 @@ mod test {
     }
 
     #[test]
-    fn possible_game_ids() {
-        let test_input = indoc! {"
-            Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
-            Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
-            Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
-            Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
-            Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green
-        "};
-        let games = test_input
-            .lines()
-            .map(Game::from_str)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+    fn test_possible_game_ids() {
+        let games = test_input();
         let inventory = Inventory {
             red: 12,
             green: 13,
             blue: 14,
         };
         assert_eq!(inventory.possible_game_ids(&games), vec![1, 2, 5]);
+    }
+
+    #[test]
+    fn test_game_power() {
+        let games = test_input();
+        let powers: Vec<u32> = games.iter().map(|game| game.power()).collect();
+        assert_eq!(powers, vec![48, 12, 1560, 630, 36]);
     }
 }
