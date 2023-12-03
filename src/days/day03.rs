@@ -28,7 +28,13 @@ impl Day for Day3 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        let grid = match grid() {
+            Result::Ok(grid) => grid,
+            Err(e) => return Some(Err(e)),
+        };
+        let ratios = grid.gear_ratios();
+        let sum = ratios.into_iter().sum::<u32>();
+        Some(Ok(sum.to_string()))
     }
 }
 
@@ -41,10 +47,6 @@ struct Coordinate {
 impl Coordinate {
     fn new(x: i32, y: i32) -> Self {
         Coordinate { x, y }
-    }
-
-    fn origin() -> Self {
-        Coordinate::new(0, 0)
     }
 
     fn adjacent_coordinates(&self) -> Vec<Coordinate> {
@@ -168,6 +170,59 @@ impl Grid {
             .map(|it| it.value)
             .collect()
     }
+
+    fn find_gears(&self) -> Vec<Gear> {
+        let numbers = self.find_all_numbers();
+        let numbers_with_coordinates: Vec<(Number, HashSet<Coordinate>)> = numbers
+            .iter()
+            .map(|number| {
+                let digit_coordinates = number.digit_coordinates();
+                (
+                    number.clone(),
+                    digit_coordinates.into_iter().collect::<HashSet<_>>(),
+                )
+            })
+            .collect();
+        let star_symbols: Vec<Coordinate> = self
+            .find_all_symbols()
+            .into_iter()
+            .filter(|(_, symbol)| *symbol == '*')
+            .map(|(coord, _)| coord)
+            .collect();
+
+        let gears = star_symbols
+            .iter()
+            .filter_map(|star_symbol| {
+                let adjacent_coordinates: HashSet<Coordinate> =
+                    star_symbol.adjacent_coordinates().iter().copied().collect();
+
+                let adjacent_numbers = numbers_with_coordinates
+                    .iter()
+                    .filter(|(_, digit_coordinates)| {
+                        digit_coordinates
+                            .intersection(&adjacent_coordinates)
+                            .any(|_| true)
+                    })
+                    .map(|(number, _)| number.clone())
+                    .collect::<Vec<_>>();
+
+                if adjacent_numbers.len() == 2 {
+                    Some(Gear {
+                        coordinate: *star_symbol,
+                        numbers: [adjacent_numbers[0], adjacent_numbers[1]],
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        gears
+    }
+
+    fn gear_ratios(&self) -> Vec<u32> {
+        let gears = self.find_gears();
+        gears.iter().map(|it| it.ratio()).collect()
+    }
 }
 
 impl FromStr for Grid {
@@ -233,6 +288,17 @@ impl Number {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct Gear {
+    coordinate: Coordinate,
+    numbers: [Number; 2],
+}
+impl Gear {
+    fn ratio(&self) -> u32 {
+        self.numbers[0].value * self.numbers[1].value
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -259,9 +325,17 @@ mod test {
     }
 
     #[test]
+    fn test_part2() {
+        assert_eq!(
+            "75220503".to_string(),
+            super::Day3.part2().unwrap().unwrap()
+        );
+    }
+
+    #[test]
     fn test_grid_parse() {
         let grid = sample_grid();
-        assert_eq!(grid.get(Coordinate::origin()), Some(GridCell::Digit(4)));
+        assert_eq!(grid.get(Coordinate::new(0, 0)), Some(GridCell::Digit(4)));
         assert_eq!(grid.get(Coordinate::new(3, 1)), Some(GridCell::Symbol('*')));
     }
 
@@ -300,5 +374,35 @@ mod test {
         assert_eq!(sum, 4361);
         let missing_numbers = grid.find_all_numbers().len() - numbers.len();
         assert_eq!(missing_numbers, 2);
+    }
+
+    #[test]
+    fn test_grid_find_gears() {
+        let grid = sample_grid();
+        let gears = grid.find_gears();
+        assert_eq!(gears.len(), 2);
+        assert_eq!(
+            gears[0]
+                .numbers
+                .iter()
+                .map(|it| it.value)
+                .collect::<Vec<u32>>(),
+            vec![467, 35]
+        );
+        assert_eq!(
+            gears[1]
+                .numbers
+                .iter()
+                .map(|it| it.value)
+                .collect::<Vec<u32>>(),
+            vec![755, 598]
+        );
+    }
+
+    #[test]
+    fn test_grid_gear_ratios() {
+        let grid = sample_grid();
+        let ratios = grid.gear_ratios();
+        assert_eq!(ratios.into_iter().sum::<u32>(), 467835);
     }
 }
