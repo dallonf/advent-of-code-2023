@@ -165,7 +165,6 @@ impl Grid {
                         Some(GridCell::Symbol(_)) => true,
                         _ => false,
                     })
-                // let all_adjacent_coordinates =
             })
             .map(|it| it.value)
             .collect()
