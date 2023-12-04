@@ -1,5 +1,6 @@
 // Day 4: Scratchcards
 
+use std::cell::Cell;
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -35,7 +36,15 @@ impl Day for Day4 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            let cards = puzzle_input()?;
+            cards
+                .iter()
+                .map(|card| card.explode(&cards))
+                .sum::<u32>()
+                .to_string()
+                .pipe(Ok)
+        }))
     }
 }
 
@@ -44,6 +53,7 @@ struct Card {
     id: u32,
     numbers: Box<[u8]>,
     winning_numbers: Box<[u8]>,
+    explosion_result: Cell<Option<u32>>,
 }
 
 impl Card {
@@ -67,6 +77,31 @@ impl Card {
             1 => 1,
             more => 2_u32.pow(more - 1),
         }
+    }
+
+    fn get_cards_to_copy<'a>(&self, full_list: &'a [Card]) -> Vec<&'a Card> {
+        let matching_numbers = self.matching_winning_numbers().len();
+        if matching_numbers == 0 {
+            return vec![];
+        }
+        let next_card = self.id as usize;
+        let last_copied_card = next_card + matching_numbers - 1;
+        let copied_cards = &full_list[next_card..=last_copied_card];
+        copied_cards.iter().collect()
+    }
+
+    fn explode(&self, full_list: &[Card]) -> u32 {
+        if let Some(result) = self.explosion_result.get() {
+            return result;
+        }
+        let copied_cards = self.get_cards_to_copy(full_list);
+
+        let result = 1 + copied_cards
+            .iter()
+            .map(|card| card.explode(full_list))
+            .sum::<u32>();
+        self.explosion_result.set(Some(result));
+        result
     }
 }
 
@@ -101,6 +136,7 @@ impl FromStr for Card {
             id,
             numbers,
             winning_numbers,
+            explosion_result: Cell::new(None),
         })
     }
 }
@@ -108,6 +144,19 @@ impl FromStr for Card {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_part1() {
+        assert_eq!("26914".to_string(), super::Day4.part1().unwrap().unwrap());
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!(
+            "13080971".to_string(),
+            super::Day4.part2().unwrap().unwrap()
+        );
+    }
 
     fn sample_input() -> Vec<Card> {
         let input = indoc! {"
@@ -125,17 +174,13 @@ mod test {
     }
 
     #[test]
-    fn test_part1() {
-        assert_eq!("26914".to_string(), super::Day4.part1().unwrap().unwrap());
-    }
-
-    #[test]
     fn test_parse_card() {
         let input = "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53";
         let expected_card = Card {
             id: 1,
             numbers: vec![41, 48, 83, 86, 17].into_boxed_slice(),
             winning_numbers: vec![83, 86, 6, 31, 17, 9, 48, 53].into_boxed_slice(),
+            explosion_result: Cell::new(None),
         };
         assert_eq!(expected_card, Card::from_str(input).unwrap());
     }
@@ -155,5 +200,24 @@ mod test {
             .collect::<Vec<(u32, u32)>>();
 
         assert_eq!(scores, vec![(1, 8), (2, 2), (3, 2), (4, 1), (5, 0), (6, 0)]);
+    }
+
+    #[test]
+    fn test_cards_to_copy() {
+        let cards = sample_input();
+        let card = &cards[0];
+        let cards_to_copy = card.get_cards_to_copy(&cards);
+        let expected = vec![2, 3, 4, 5];
+        assert_eq!(
+            cards_to_copy.iter().map(|it| it.id).collect::<Vec<u32>>(),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_explode_cards() {
+        let cards = sample_input();
+        let result = cards.iter().map(|card| card.explode(&cards)).sum::<u32>();
+        assert_eq!(result, 30);
     }
 }
