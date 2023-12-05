@@ -1,7 +1,7 @@
 // Day 5: If You Give A Seed A Fertilizer
 
-use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 
 use regex::Regex;
@@ -90,6 +90,45 @@ impl AlmanacMapList {
         }
         input
     }
+
+    fn map_range(&self, input: &RangeInclusive<u64>) -> Vec<RangeInclusive<u64>> {
+        let mut output = Vec::new();
+        let mut current_range = input.clone();
+        for rule in self.0.iter() {
+            let rule_source_end_inclusive = rule.source_range_start + rule.range_length - 1;
+            if *current_range.start() < rule.source_range_start {
+                // input extends before the current rule, so insert a passthrough range
+                let passthrough_end = (rule.source_range_start - 1).min(*current_range.end());
+                let passthrough_range = *current_range.start()..=passthrough_end;
+                output.push(passthrough_range);
+                current_range = (passthrough_end + 1)..=*current_range.end();
+                if current_range.is_empty() {
+                    return output;
+                }
+            }
+            // now that's taken care of, the current range either begins at, or in the middle of, or after, the current rule
+            // if it's after, we can skip to the next rule
+            if *current_range.start() > rule_source_end_inclusive {
+                continue;
+            }
+            // now it's definitely either at or in the middle of the rule's source range
+            let source_begin = *current_range.start();
+            let source_end = (*current_range.end()).min(rule_source_end_inclusive);
+            let source_offset = source_begin - rule.source_range_start;
+            let length = source_end - source_begin;
+            let destination_start = rule.destination_range_start + source_offset;
+            let destination_end = destination_start + length;
+            let range = destination_start..=destination_end;
+            output.push(range);
+            current_range = (source_end + 1)..=*current_range.end();
+            if current_range.is_empty() {
+                return output;
+            }
+        }
+        // anything left over gets passed through
+        output.push(current_range);
+        output
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -124,6 +163,36 @@ impl Almanac {
         Ok(current_number)
     }
 
+    fn map_seed_range_to_location_ranges(
+        &self,
+        seed: &RangeInclusive<u64>,
+    ) -> Result<Vec<RangeInclusive<u64>>> {
+        let mut current_ranges = vec![seed.clone()];
+        for categories in [
+            Category::Seed,
+            Category::Soil,
+            Category::Fertilizer,
+            Category::Water,
+            Category::Light,
+            Category::Temperature,
+            Category::Humidity,
+            Category::Location,
+        ]
+        .windows(2)
+        {
+            let key = (categories[0], categories[1]);
+            let map_list = self
+                .maps
+                .get(&key)
+                .ok_or(anyhow!("Couldn't find map list for {:?}", &key))?;
+            current_ranges = current_ranges
+                .iter()
+                .flat_map(|range| map_list.map_range(range))
+                .collect();
+        }
+        Ok(current_ranges)
+    }
+
     fn lowest_location(&self) -> Result<u64> {
         let mut lowest_location = u64::MAX;
         for seed in self.seeds.iter() {
@@ -135,21 +204,33 @@ impl Almanac {
         Ok(lowest_location)
     }
 
-    fn lowest_location_with_ranges(&self) -> Result<u64> {
-        let all_seeds = self.seeds.chunks_exact(2).par_bridge().flat_map(|range| {
-            let start = range[0];
-            let length = range[1];
-            start..=(start + length)
-        });
-        let lowest_location = all_seeds
-            .map(|seed| self.map_seed_to_location(seed))
-            .min_by(|location1, location2| match (location1, location2) {
-                (Ok(location1), Ok(location2)) => location1.cmp(&location2),
-                (Ok(_), Err(_)) => Ordering::Greater,
-                (Err(_), Ok(_)) => Ordering::Less,
-                (Err(_), Err(_)) => Ordering::Equal,
+    fn seed_ranges(&self) -> Vec<RangeInclusive<u64>> {
+        self.seeds
+            .chunks_exact(2)
+            .map(|range| {
+                let start = range[0];
+                let length = range[1];
+                start..=(start + length)
             })
-            .unwrap_or(Err(anyhow!("No seeds found")));
+            .collect()
+    }
+
+    fn lowest_location_with_ranges(&self) -> Result<u64> {
+        let seed_ranges = self.seed_ranges();
+        let location_ranges: Vec<RangeInclusive<u64>> = seed_ranges
+            .iter()
+            .map(|seed_range| self.map_seed_range_to_location_ranges(&seed_range))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        let lowest_location = location_ranges
+            .iter()
+            .map(|it| it.start())
+            .min()
+            .ok_or(anyhow!("no location range found"))
+            .copied();
+
         lowest_location
     }
 }
@@ -223,6 +304,8 @@ impl FromStr for Almanac {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
@@ -235,7 +318,10 @@ mod test {
 
     #[test]
     fn test_part2() {
-        assert_eq!("0".to_string(), super::Day5.part2().unwrap().unwrap());
+        assert_eq!(
+            "108956227".to_string(),
+            super::Day5.part2().unwrap().unwrap()
+        );
     }
 
     fn example_input() -> Almanac {
@@ -296,6 +382,77 @@ mod test {
         assert_eq!(almanac.map_seed_to_location(14).unwrap(), 43);
         assert_eq!(almanac.map_seed_to_location(55).unwrap(), 86);
         assert_eq!(almanac.map_seed_to_location(13).unwrap(), 35);
+    }
+
+    #[test]
+    fn test_map_ranges() {
+        let almanac = example_input();
+        let seed_to_soil = almanac.maps.get(&(Category::Seed, Category::Soil)).unwrap();
+        assert_eq!(
+            seed_to_soil.map_range(&(47..=105)),
+            vec![47..=49, 52..=99, 50..=51, 100..=105]
+        );
+    }
+
+    #[test]
+    fn test_problem_ranges() {
+        let almanac = example_input();
+        let seed_to_soil = almanac.maps.get(&(Category::Seed, Category::Soil)).unwrap();
+        let fertizilizer_to_water = almanac
+            .maps
+            .get(&(Category::Fertilizer, Category::Water))
+            .unwrap();
+        let temperature_to_humidity = almanac
+            .maps
+            .get(&(Category::Temperature, Category::Humidity))
+            .unwrap();
+        assert_eq!(seed_to_soil.map_range(&(79..=93)), vec![81..=95]);
+        assert_eq!(fertizilizer_to_water.map_range(&(81..=95)), vec![81..=95]);
+        assert_eq!(
+            fertizilizer_to_water.map_range(&(57..=70)),
+            vec![53..=56, 61..=70]
+        );
+        assert_eq!(temperature_to_humidity.map_range(&(93..=99)), vec![93..=99]);
+        assert_eq!(
+            temperature_to_humidity.map_range(&(68..=74)),
+            vec![69..=69, 0..=0, 70..=74]
+        );
+    }
+
+    #[test]
+    fn test_ranges_equivalence() {
+        let almanac = example_input();
+        let mut current_ranges = almanac.seed_ranges();
+        for categories in [
+            Category::Seed,
+            Category::Soil,
+            Category::Fertilizer,
+            Category::Water,
+            Category::Light,
+            Category::Temperature,
+            Category::Humidity,
+            Category::Location,
+        ]
+        .windows(2)
+        {
+            let key = (categories[0], categories[1]);
+            let map_list = almanac.maps.get(&key).unwrap();
+            let ranges = current_ranges.clone();
+            let all_numbers: Vec<u64> = current_ranges.iter().flat_map(|it| it.clone()).collect();
+            let mapped_numbers: HashSet<u64> =
+                all_numbers.iter().map(|it| map_list.map(*it)).collect();
+            current_ranges = current_ranges
+                .iter()
+                .flat_map(|range| map_list.map_range(range))
+                .collect();
+            let numbers_in_ranges: HashSet<u64> =
+                current_ranges.iter().flat_map(|it| it.clone()).collect();
+            assert_eq!(
+                numbers_in_ranges, mapped_numbers,
+                "{:?} mapping: {:?}",
+                key, ranges
+            )
+        }
     }
 
     #[test]
