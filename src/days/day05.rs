@@ -1,5 +1,6 @@
 // Day 5: If You Give A Seed A Fertilizer
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -28,7 +29,11 @@ impl Day for Day5 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            let almanac = puzzle_input()?;
+            let lowest_location = almanac.lowest_location_with_ranges()?;
+            Ok(lowest_location.to_string())
+        }))
     }
 }
 
@@ -75,10 +80,6 @@ impl AlmanacMapList {
     fn map(&self, input: u64) -> u64 {
         for rule in self.0.iter().rev() {
             if input >= rule.source_range_start {
-                println!(
-                    "overflow?? {} + {}",
-                    rule.source_range_start, rule.range_length
-                );
                 if input < rule.source_range_start + rule.range_length {
                     return rule.destination_range_start + (input - rule.source_range_start);
                 } else {
@@ -132,6 +133,24 @@ impl Almanac {
             }
         }
         Ok(lowest_location)
+    }
+
+    fn lowest_location_with_ranges(&self) -> Result<u64> {
+        let all_seeds = self.seeds.chunks_exact(2).par_bridge().flat_map(|range| {
+            let start = range[0];
+            let length = range[1];
+            start..=(start + length)
+        });
+        let lowest_location = all_seeds
+            .map(|seed| self.map_seed_to_location(seed))
+            .min_by(|location1, location2| match (location1, location2) {
+                (Ok(location1), Ok(location2)) => location1.cmp(&location2),
+                (Ok(_), Err(_)) => Ordering::Greater,
+                (Err(_), Ok(_)) => Ordering::Less,
+                (Err(_), Err(_)) => Ordering::Equal,
+            })
+            .unwrap_or(Err(anyhow!("No seeds found")));
+        lowest_location
     }
 }
 
@@ -206,16 +225,21 @@ impl FromStr for Almanac {
 mod test {
     use super::*;
 
-    fn example_input() -> Almanac {
-        Almanac::from_str(include_str!("./day05_example_input.txt")).unwrap()
-    }
-
     #[test]
     fn test_part1() {
         assert_eq!(
             "322500873".to_string(),
             super::Day5.part1().unwrap().unwrap()
         );
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!("0".to_string(), super::Day5.part2().unwrap().unwrap());
+    }
+
+    fn example_input() -> Almanac {
+        Almanac::from_str(include_str!("./day05_example_input.txt")).unwrap()
     }
 
     #[test]
@@ -272,5 +296,11 @@ mod test {
         assert_eq!(almanac.map_seed_to_location(14).unwrap(), 43);
         assert_eq!(almanac.map_seed_to_location(55).unwrap(), 86);
         assert_eq!(almanac.map_seed_to_location(13).unwrap(), 35);
+    }
+
+    #[test]
+    fn test_lowest_location_with_ranges() {
+        let almanac = example_input();
+        assert_eq!(almanac.lowest_location_with_ranges().unwrap(), 46);
     }
 }
