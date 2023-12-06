@@ -55,17 +55,27 @@ impl Race {
     }
 
     fn ways_to_win(&self) -> u64 {
-        // let odd_midpoint = if self.time % 2 == 0 {
-        //     None
-        // } else {
-        //     Some(self.time / 2)
-        // };
-        // let halfway = self.time / 2;
-        let possible_button_holds = 1..self.time;
-        let possible_wins = possible_button_holds
-            .par_bridge()
-            .filter(|hold| simulate_race(self.time, *hold) > self.distance);
-        possible_wins.count() as u64
+        let max_hold_time = self.time - 1;
+        let halfway = max_hold_time / 2;
+        let victory_threshold = {
+            let mut victory_search_min = 1;
+            let mut victory_search_max = halfway;
+            while victory_search_min < victory_search_max {
+                let search_midpoint = (victory_search_min + victory_search_max) / 2;
+                let is_win = simulate_race(self.time, search_midpoint) > self.distance;
+                if is_win {
+                    victory_search_max = search_midpoint;
+                } else {
+                    victory_search_min = search_midpoint + 1;
+                }
+            }
+            victory_search_min
+        };
+
+        let wins_between_victory_threshold_and_midpoint = (halfway + 1) - victory_threshold;
+
+        let is_odd = max_hold_time % 2 == 1;
+        wins_between_victory_threshold_and_midpoint * 2 + if is_odd { 1 } else { 0 }
     }
 }
 
@@ -116,6 +126,14 @@ mod test {
     #[test]
     fn test_part1() {
         assert_eq!("1159152".to_string(), super::Day6.part1().unwrap().unwrap());
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!(
+            "41513103".to_string(),
+            super::Day6.part2().unwrap().unwrap()
+        );
     }
 
     fn sample_input() -> Leaderboard {
