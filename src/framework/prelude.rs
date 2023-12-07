@@ -4,3 +4,4 @@ pub use indoc::*;
 pub use lazy_static::lazy_static;
 pub use rayon::prelude::*;
 pub use tap::prelude::*;
+pub use itertools::Itertools;
