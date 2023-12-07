@@ -20,14 +20,14 @@ impl Day for Day7 {
 
     fn part1(&self) -> Option<Result<String>> {
         Some(try_block(move || {
-            Ok(puzzle_input::<HandMk1>()?
-                .total_winnings()
-                .to_string())
+            Ok(puzzle_input::<HandMk1>()?.total_winnings().to_string())
         }))
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            Ok(puzzle_input::<HandMk2>()?.total_winnings().to_string())
+        }))
     }
 }
 
@@ -212,7 +212,45 @@ impl Hand for ArrayHand<CardMk1> {
 
 impl Hand for HandMk2 {
     fn get_type(&self) -> HandType {
-        todo!()
+        let jokers = self
+            .cards
+            .iter()
+            .filter(|card| **card == CardMk2::Joker)
+            .count();
+        let matching_remaining_cards = self
+            .cards
+            .iter()
+            .filter(|card| **card != CardMk2::Joker)
+            .counts();
+        let counts = matching_remaining_cards
+            .values()
+            .sorted()
+            .rev()
+            .copied()
+            .collect_vec();
+        if counts.get(0).map(|it| it + jokers) == Some(5) {
+            HandType::FiveOfAKind
+        } else if counts.get(0).map(|it| it + jokers) == Some(4) {
+            HandType::FourOfAKind
+        } else if counts.get(0).map(|it| it + jokers) == Some(3) {
+            // note: there's no circumstance where a joker would be applied to a full house
+            // it would become a four-of-a-kind instead
+            if counts.get(1) == Some(&2) {
+                HandType::FullHouse
+            } else {
+                HandType::ThreeOfAKind
+            }
+        } else if counts.get(0).map(|it| it + jokers) == Some(2) {
+            // note: there's no circumstance where a joker would be applied to a two-pair
+            // it would become a three-of-a-kind instead
+            if counts.get(1) == Some(&2) {
+                HandType::TwoPair
+            } else {
+                HandType::OnePair
+            }
+        } else {
+            HandType::HighCard
+        }
     }
 }
 
@@ -327,6 +365,15 @@ mod test {
         );
     }
 
+    #[test]
+    fn test_part2() {
+        // 250917800 is too low
+        assert_eq!(
+            "0".to_string(),
+            super::Day7.part2().unwrap().unwrap()
+        );
+    }
+
     fn sample_input<HandType: Hand>() -> Game<HandType> {
         let input = indoc! {"
             32T3K 765
@@ -402,5 +449,44 @@ mod test {
     fn test_total_winnings() {
         let game: Game<HandMk1> = sample_input();
         assert_eq!(game.total_winnings(), 6440);
+    }
+
+    #[test]
+    fn test_jokers() {
+        assert_eq!(
+            HandMk2::from_str("QJJQ2").unwrap().get_type(),
+            HandType::FourOfAKind
+        );
+        assert_eq!(
+            HandMk2::from_str("T55J5").unwrap().get_type(),
+            HandType::FourOfAKind
+        );
+        assert_eq!(
+            HandMk2::from_str("KTJJT").unwrap().get_type(),
+            HandType::FourOfAKind
+        );
+        assert_eq!(
+            HandMk2::from_str("QQQJA").unwrap().get_type(),
+            HandType::FourOfAKind
+        );
+    }
+
+    #[test]
+    fn test_joker_full_house() {
+        assert_eq!(
+            HandMk2::from_str("QQJTT").unwrap().get_type(),
+            HandType::FullHouse
+        );
+    }
+
+    #[test]
+    fn test_joker_ordering() {
+        assert!(HandMk2::from_str("QQQQ2").unwrap() > HandMk2::from_str("JKKK2").unwrap());
+    }
+
+    #[test]
+    fn test_winnings_mk2() {
+        let game: Game<HandMk2> = sample_input();
+        assert_eq!(game.total_winnings(), 5905);
     }
 }
