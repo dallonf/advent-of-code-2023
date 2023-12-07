@@ -94,6 +94,26 @@ impl Card for CardMk1 {
     }
 }
 
+impl From<CardMk2> for CardMk1 {
+    fn from(value: CardMk2) -> Self {
+        match value {
+            CardMk2::Joker => CardMk1::Jack,
+            CardMk2::Two => CardMk1::Two,
+            CardMk2::Three => CardMk1::Three,
+            CardMk2::Four => CardMk1::Four,
+            CardMk2::Five => CardMk1::Five,
+            CardMk2::Six => CardMk1::Six,
+            CardMk2::Seven => CardMk1::Seven,
+            CardMk2::Eight => CardMk1::Eight,
+            CardMk2::Nine => CardMk1::Nine,
+            CardMk2::Ten => CardMk1::Ten,
+            CardMk2::Queen => CardMk1::Queen,
+            CardMk2::King => CardMk1::King,
+            CardMk2::Ace => CardMk1::Ace,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum CardMk2 {
     Joker,
@@ -217,6 +237,9 @@ impl Hand for HandMk2 {
             .iter()
             .filter(|card| **card == CardMk2::Joker)
             .count();
+        if jokers == 5 {
+            return HandType::FiveOfAKind;
+        }
         let matching_remaining_cards = self
             .cards
             .iter()
@@ -367,11 +390,7 @@ mod test {
 
     #[test]
     fn test_part2() {
-        // 250917800 is too low
-        assert_eq!(
-            "0".to_string(),
-            super::Day7.part2().unwrap().unwrap()
-        );
+        assert_eq!("251135960".to_string(), super::Day7.part2().unwrap().unwrap());
     }
 
     fn sample_input<HandType: Hand>() -> Game<HandType> {
@@ -483,6 +502,94 @@ mod test {
     fn test_joker_ordering() {
         assert!(HandMk2::from_str("QQQQ2").unwrap() > HandMk2::from_str("JKKK2").unwrap());
     }
+
+    #[test]
+    fn test_random_real_inputs() {
+        fn get_hand_type(input: &str) -> HandType {
+            HandMk2::from_str(input).unwrap().get_type()
+        }
+        assert_eq!(get_hand_type("528Q8"), HandType::OnePair);
+        assert_eq!(get_hand_type("72776"), HandType::ThreeOfAKind);
+        assert_eq!(get_hand_type("TTJJT"), HandType::FiveOfAKind);
+        assert_eq!(get_hand_type("K68JJ"), HandType::ThreeOfAKind);
+        assert_eq!(get_hand_type("68868"), HandType::FullHouse);
+        assert_eq!(get_hand_type("4A527"), HandType::HighCard);
+        assert_eq!(get_hand_type("8T843"), HandType::OnePair);
+        assert_eq!(get_hand_type("AQ347"), HandType::HighCard);
+        assert_eq!(get_hand_type("737AJ"), HandType::ThreeOfAKind);
+        assert_eq!(get_hand_type("9Q93Q"), HandType::TwoPair);
+        assert_eq!(get_hand_type("47J47"), HandType::FullHouse);
+        assert_eq!(get_hand_type("5K26T"), HandType::HighCard);
+        assert_eq!(get_hand_type("6AK6A"), HandType::TwoPair);
+        assert_eq!(get_hand_type("T33JJ"), HandType::FourOfAKind);
+        assert_eq!(get_hand_type("5A2J6"), HandType::OnePair);
+        assert_eq!(get_hand_type("6JQ4K"), HandType::OnePair);
+        assert_eq!(get_hand_type("QQQ6Q"), HandType::FourOfAKind);
+    }
+
+    #[test]
+    fn test_problematic_hands() {
+        assert_eq!(
+            HandMk2::from_str("JJJJJ").unwrap().get_type(),
+            HandType::FiveOfAKind
+        );
+    }
+
+    // #[test]
+    // fn test_brute_force_equivalence() {
+    //     let game: Game<HandMk2> = puzzle_input().unwrap();
+    //     for hand_with_bid in game.hands.iter() {
+    //         let mk2_type = hand_with_bid.hand.get_type();
+    //         let possible_mk1_cards = hand_with_bid
+    //             .hand
+    //             .cards
+    //             .iter()
+    //             .map(|card| match card {
+    //                 CardMk2::Joker => vec![
+    //                     CardMk1::Two,
+    //                     CardMk1::Three,
+    //                     CardMk1::Four,
+    //                     CardMk1::Five,
+    //                     CardMk1::Six,
+    //                     CardMk1::Seven,
+    //                     CardMk1::Eight,
+    //                     CardMk1::Nine,
+    //                     CardMk1::Ten,
+    //                     CardMk1::Queen,
+    //                     CardMk1::King,
+    //                     CardMk1::Ace,
+    //                 ],
+    //                 _ => vec![(*card).conv::<CardMk1>()],
+    //             })
+    //             .collect_vec();
+    //         let mut possible_mk1_hands = vec![vec![]];
+    //         for possible_cards in possible_mk1_cards.iter() {
+    //             let mut new_possible_mk1_hands = vec![];
+    //             for possible_hand in possible_mk1_hands.iter() {
+    //                 for possible_card in possible_cards.iter() {
+    //                     let mut new_possible_hand = possible_hand.clone();
+    //                     new_possible_hand.push(*possible_card);
+    //                     new_possible_mk1_hands.push(new_possible_hand);
+    //                 }
+    //             }
+    //             possible_mk1_hands = new_possible_mk1_hands;
+    //         }
+    //         let best_mk1_hand = possible_mk1_hands
+    //             .iter()
+    //             .map(|cards| HandMk1 {
+    //                 cards: cards.clone().try_into().unwrap(),
+    //             })
+    //             .max()
+    //             .unwrap();
+
+    //         let mk1_type = best_mk1_hand.get_type();
+    //         assert_eq!(
+    //             mk2_type, mk1_type,
+    //             "{} interpreted as {}, {:?}",
+    //             hand_with_bid.hand, best_mk1_hand, mk1_type
+    //         );
+    //     }
+    // }
 
     #[test]
     fn test_winnings_mk2() {
