@@ -186,38 +186,51 @@ impl DesertMap {
             .copied()
             .filter(|label| label.is_start())
             .collect_vec();
-        #[derive(Debug, Clone)]
-        struct LoopInfo {
-            init_length: usize,
-            sequence_length: usize,
-            destination_indices_in_sequence: Vec<usize>,
+        #[derive(Debug)]
+        struct PathInfo<'a> {
+            first_destination: Option<usize>,
+            time_until_next_destination: Option<usize>,
+            iterator: DesertPathIterator<'a>,
         }
-        let loops = starting_nodes
-            .par_iter()
-            .map(|starting_node| {
-                let path_loop = self.find_loop(*starting_node)?;
-                let destination_indices = path_loop
-                    .sequence
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, label)| label.is_destination())
-                    .map(|(index, _)| index)
-                    .collect();
-                Ok(LoopInfo {
-                    init_length: path_loop.init.len(),
-                    sequence_length: path_loop.sequence.len(),
-                    destination_indices_in_sequence: destination_indices,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        let result = loops
+        let mut all_paths = starting_nodes
             .iter()
-            .map(|path_loop| path_loop.sequence_length)
-            .reduce(|a, b| integer::lcm(a, b))
-            .ok_or(anyhow!("No match found"))?;
+            .map(|node| PathInfo {
+                first_destination: None,
+                time_until_next_destination: None,
+                iterator: self.path(*node),
+            })
+            .collect_vec();
+        let mut steps = 0;
+        while all_paths
+            .iter()
+            .any(|it| it.first_destination.is_none() || it.time_until_next_destination.is_none())
+        {
+            for path in all_paths.iter_mut() {
+                if path.first_destination.is_none() {
+                    let (node, _) = path.iterator.next().unwrap()?;
+                    if node.is_destination() {
+                        path.first_destination = Some(steps);
+                    }
+                } else if path.time_until_next_destination.is_none() {
+                    let (node, _) = path.iterator.next().unwrap()?;
+                    if node.is_destination() {
+                        path.time_until_next_destination =
+                            Some(steps - path.first_destination.unwrap());
+                    }
+                }
+            }
+            steps += 1;
+        }
+        for path in all_paths.iter() {
+            // apparently these are always the same?? That lets us not worry about offsets
+            assert_eq!(path.first_destination, path.time_until_next_destination);
+        }
+        let phase_length = all_paths
+            .iter()
+            .map(|it| it.time_until_next_destination.unwrap())
+            .reduce(|a, b| integer::lcm(a, b));
 
-        Ok(result as u32)
+        phase_length.map(|it| it as u32).ok_or(anyhow!("No match found"))
     }
 }
 
@@ -258,6 +271,7 @@ impl FromStr for DesertMap {
     }
 }
 
+#[derive(Debug)]
 struct DesertPathIterator<'a> {
     map: &'a DesertMap,
     current_node: NodeLabel,
@@ -340,6 +354,7 @@ mod test {
     #[test]
     fn test_part2() {
         // not 1677130951; too low
+        // and just in case it was an off-by-one error, not 1677130952 either :P
         assert_eq!(super::Day8.part2().unwrap().unwrap(), "0".to_string(),);
     }
 
@@ -407,6 +422,7 @@ mod test {
     #[test]
     fn test_navigate_for_ghosts() {
         let desert_map = sample_input_for_ghosts();
+        // let desert_map = puzzle_input().unwrap();
         let result = desert_map.steps_to_reach_ghostly_destinations().unwrap();
         assert_eq!(result, 6);
     }
