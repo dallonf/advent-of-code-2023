@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
 
+use num::integer;
 use regex::Regex;
 
 use crate::framework::Day;
@@ -210,70 +211,13 @@ impl DesertMap {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        struct WarmLoopInfo {
-            starting_index: usize,
-            sequence_length: usize,
-            destination_indices_in_sequence: Vec<usize>,
-        }
-
-        let max_init_length = loops.iter().map(|info| info.init_length).max().unwrap();
-        let warm_loops = loops
+        let result = loops
             .iter()
-            .map(|info| {
-                let starting_index = max_init_length - info.init_length;
-                let starting_index = starting_index % info.sequence_length;
-                WarmLoopInfo {
-                    starting_index,
-                    sequence_length: info.sequence_length,
-                    destination_indices_in_sequence: info.destination_indices_in_sequence.clone(),
-                }
-            })
-            .collect::<Vec<_>>();
+            .map(|path_loop| path_loop.sequence_length)
+            .reduce(|a, b| integer::lcm(a, b))
+            .ok_or(anyhow!("No match found"))?;
 
-        let longest_loop = warm_loops
-            .iter()
-            .max_by_key(|info| info.sequence_length)
-            .unwrap();
-        let remaining_loops = warm_loops
-            .iter()
-            .filter(|info| info != &longest_loop)
-            .collect::<Vec<_>>();
-
-        for longest_loop_destination_index in &longest_loop.destination_indices_in_sequence {
-            let matches_all_other_loops = remaining_loops.iter().all(|info| {
-                println!(
-                    "comparing {:?} to {:?} ({})",
-                    info, longest_loop, longest_loop_destination_index
-                );
-                let mut longest_loop_destination_index_relative_to_other_loop =
-                    (*longest_loop_destination_index as isize
-                        + longest_loop.starting_index as isize
-                        - info.starting_index as isize)
-                        % (info.sequence_length as isize);
-                if longest_loop_destination_index_relative_to_other_loop < 0 {
-                    longest_loop_destination_index_relative_to_other_loop +=
-                        longest_loop.sequence_length as isize;
-                }
-                let longest_loop_destination_index_relative_to_other_loop =
-                    longest_loop_destination_index_relative_to_other_loop as usize;
-                dbg!(longest_loop_destination_index_relative_to_other_loop);
-                info.destination_indices_in_sequence
-                    .iter()
-                    .any(|other_loop_destination_index| {
-                        dbg!(other_loop_destination_index);
-                        dbg!(longest_loop_destination_index_relative_to_other_loop);
-                        *other_loop_destination_index
-                            == longest_loop_destination_index_relative_to_other_loop
-                    })
-            });
-            if matches_all_other_loops {
-                return Ok(
-                    (*longest_loop_destination_index + longest_loop.starting_index + 1) as u32,
-                );
-            }
-        }
-        Err(anyhow!("No match found"))
+        Ok(result as u32)
     }
 }
 
@@ -393,10 +337,11 @@ mod test {
         assert_eq!(super::Day8.part1().unwrap().unwrap(), "19199".to_string(),);
     }
 
-    // #[test]
-    // fn test_part2() {
-    //     assert_eq!(super::Day8.part2().unwrap().unwrap(), "0".to_string(),);
-    // }
+    #[test]
+    fn test_part2() {
+        // not 1677130951; too low
+        assert_eq!(super::Day8.part2().unwrap().unwrap(), "0".to_string(),);
+    }
 
     fn sample_input() -> DesertMap {
         let input = indoc! {"
@@ -545,6 +490,11 @@ mod test {
                 starting_node,
                 destinations_in_sequence
             );
+
+            // I have no idea why this might be the case, but it sure is useful
+            assert!(destinations_in_sequence.iter().any(|destination| {
+                path_loop.sequence.len() == path_loop.init.len() + destination.0
+            }));
         }
     }
 }
