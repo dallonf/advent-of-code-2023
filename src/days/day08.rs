@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
 
-use num::integer;
 use regex::Regex;
 
 use crate::framework::Day;
@@ -29,11 +28,12 @@ impl Day for Day8 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        Some(try_block(move || {
-            Ok(puzzle_input()?
-                .steps_to_reach_ghostly_destinations()?
-                .to_string())
-        }))
+        None
+        // Some(try_block(move || {
+        //     Ok(puzzle_input()?
+        //         .steps_to_reach_ghostly_destinations()?
+        //         .to_string())
+        // }))
     }
 }
 
@@ -47,9 +47,11 @@ enum Direction {
 struct NodeLabel([u8; 3]);
 
 impl NodeLabel {
+    #[cfg(test)]
     fn is_start(&self) -> bool {
         self.0[2] == 'A' as u8
     }
+    #[cfg(test)]
 
     fn is_destination(&self) -> bool {
         self.0[2] == 'Z' as u8
@@ -134,6 +136,7 @@ impl DesertMap {
         self.steps_to_reach(zzz)
     }
 
+    #[cfg(test)]
     fn find_loop(&self, starting_node: NodeLabel) -> Result<PathLoop> {
         let mut current_node = starting_node;
         let mut sequence: Vec<NodeLabel> = vec![];
@@ -178,6 +181,7 @@ impl DesertMap {
         })
     }
 
+    #[cfg(test)]
     fn steps_to_reach_ghostly_destinations(&self) -> Result<u32> {
         let starting_nodes = self
             .network
@@ -228,9 +232,11 @@ impl DesertMap {
         let phase_length = all_paths
             .iter()
             .map(|it| it.time_until_next_destination.unwrap())
-            .reduce(|a, b| integer::lcm(a, b));
+            .reduce(|a, b| num::integer::lcm(a, b));
 
-        phase_length.map(|it| it as u32).ok_or(anyhow!("No match found"))
+        phase_length
+            .map(|it| it as u32)
+            .ok_or(anyhow!("No match found"))
     }
 }
 
@@ -351,12 +357,12 @@ mod test {
         assert_eq!(super::Day8.part1().unwrap().unwrap(), "19199".to_string(),);
     }
 
-    #[test]
-    fn test_part2() {
-        // not 1677130951; too low
-        // and just in case it was an off-by-one error, not 1677130952 either :P
-        assert_eq!(super::Day8.part2().unwrap().unwrap(), "0".to_string(),);
-    }
+    // #[test]
+    // fn test_part2() {
+    //     // not 1677130951; too low
+    //     // and just in case it was an off-by-one error, not 1677130952 either :P
+    //     assert_eq!(super::Day8.part2().unwrap().unwrap(), "0".to_string(),);
+    // }
 
     fn sample_input() -> DesertMap {
         let input = indoc! {"
