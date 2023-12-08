@@ -109,27 +109,23 @@ struct DesertMap {
 }
 
 impl DesertMap {
+    fn path(&self, starting_node: NodeLabel) -> DesertPathIterator {
+        DesertPathIterator {
+            map: self,
+            current_node: starting_node,
+            instruction_index: 0,
+        }
+    }
+
     fn steps_to_reach(&self, destination: NodeLabel) -> Result<u32> {
         let start: NodeLabel = "AAA".parse().unwrap();
-
-        let mut current = start;
-        let mut steps = 0;
-        let mut instruction_index = 0;
-        while current != destination {
-            let instruction = self.instructions[instruction_index];
-            let node = self
-                .network
-                .0
-                .get(&current)
-                .ok_or(anyhow!("Couldn't find a node with label {}", current))?;
-            current = match instruction {
-                Direction::Right => node.right,
-                Direction::Left => node.left,
-            };
-            steps += 1;
-            instruction_index = (instruction_index + 1) % self.instructions.len();
+        for (i, result) in self.path(start).enumerate() {
+            let (node, _direction) = result?;
+            if node == destination {
+                return Ok(i as u32);
+            }
         }
-        Ok(steps)
+        return Err(anyhow!("No path found"));
     }
 
     fn steps_to_reach_zzz(&self) -> Result<u32> {
@@ -137,37 +133,78 @@ impl DesertMap {
         self.steps_to_reach(zzz)
     }
 
+    fn find_loop(&self, starting_node: NodeLabel) -> Result<PathLoop> {
+        let mut current_node = starting_node;
+        let mut sequence: Vec<NodeLabel> = vec![];
+        let mut seen_steps = HashMap::<(NodeLabel, usize), usize>::new();
+        let mut instruction_index = 0;
+        loop {
+            if seen_steps.contains_key(&(current_node, instruction_index)) {
+                break;
+            }
+            seen_steps.insert((current_node, instruction_index), sequence.len());
+            let instruction = self.instructions[instruction_index];
+            let node = self
+                .network
+                .0
+                .get(&current_node)
+                .ok_or(anyhow!("Couldn't find a node with label {}", current_node))?;
+            sequence.push(current_node);
+            current_node = match instruction {
+                Direction::Right => node.right,
+                Direction::Left => node.left,
+            };
+            instruction_index = (instruction_index + 1) % self.instructions.len();
+
+            if sequence.len() > self.instructions.len() * 100 {
+                return Err(anyhow!("Didn't find a loop after 100 iterations"));
+            }
+        }
+        let loop_start = *seen_steps.get(&(current_node, instruction_index)).unwrap();
+        let init = sequence[0..loop_start]
+            .iter()
+            .copied()
+            .collect_vec()
+            .into_boxed_slice();
+        let loop_sequence = sequence[loop_start..]
+            .iter()
+            .copied()
+            .collect_vec()
+            .into_boxed_slice();
+        Ok(PathLoop {
+            init,
+            sequence: loop_sequence,
+        })
+    }
+
     fn steps_to_reach_ghostly_destinations(&self) -> Result<u32> {
-        let mut current_nodes = self
+        let starting_nodes = self
             .network
             .0
             .keys()
             .copied()
             .filter(|label| label.is_start())
             .collect_vec();
+        let loops = starting_nodes
+            .par_iter()
+            .map(|starting_node| self.find_loop(*starting_node))
+            .collect::<Result<Vec<_>>>()?;
+        let mut loop_iterators = loops
+            .iter()
+            .map(|loop_| loop_.into_iter())
+            .collect::<Vec<_>>();
+
         let mut steps = 0;
-        let mut instruction_index = 0;
+        let mut current_nodes = starting_nodes;
         while !current_nodes.iter().all(|label| label.is_destination()) {
-            let instruction = self.instructions[instruction_index];
-            let next_nodes = current_nodes
-                .iter()
-                .map(|label| {
-                    let node = self
-                        .network
-                        .0
-                        .get(label)
-                        .ok_or(anyhow!("Couldn't find a node with label {}", label))?;
-                    match instruction {
-                        Direction::Right => Ok(node.right),
-                        Direction::Left => Ok(node.left),
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?;
-            current_nodes = next_nodes;
+            for (i, loop_iter) in loop_iterators.iter_mut().enumerate() {
+                let next_node = loop_iter.next().unwrap();
+                current_nodes[i] = next_node;
+            }
             steps += 1;
-            instruction_index = (instruction_index + 1) % self.instructions.len();
         }
-        Ok(steps)
+        // don't count the first step, which is just the starting nodes
+        Ok(steps - 1)
     }
 }
 
@@ -205,6 +242,76 @@ impl FromStr for DesertMap {
             instructions,
             network,
         })
+    }
+}
+
+struct DesertPathIterator<'a> {
+    map: &'a DesertMap,
+    current_node: NodeLabel,
+    instruction_index: usize,
+}
+
+impl<'a> Iterator for DesertPathIterator<'a> {
+    /// The current item, and the next direction to go
+    type Item = Result<(NodeLabel, Direction)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let instruction = self.map.instructions[self.instruction_index];
+        let node = self
+            .map
+            .network
+            .0
+            .get(&self.current_node)
+            .ok_or(anyhow!("Couldn't find a node with label"));
+        let node = match node {
+            Ok(node) => node,
+            Err(err) => return Some(Err(err)),
+        };
+        self.current_node = match instruction {
+            Direction::Right => node.right,
+            Direction::Left => node.left,
+        };
+        self.instruction_index = (self.instruction_index + 1) % self.map.instructions.len();
+        Some(Ok((node.label, instruction)))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PathLoop {
+    init: Box<[NodeLabel]>,
+    sequence: Box<[NodeLabel]>,
+}
+
+impl<'a> IntoIterator for &'a PathLoop {
+    type Item = NodeLabel;
+    type IntoIter = PathLoopIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        PathLoopIterator {
+            path_loop: self,
+            index: 0,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PathLoopIterator<'a> {
+    path_loop: &'a PathLoop,
+    index: usize,
+}
+
+impl<'a> Iterator for PathLoopIterator<'a> {
+    type Item = NodeLabel;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = if self.index < self.path_loop.init.len() {
+            Some(self.path_loop.init[self.index])
+        } else {
+            let loop_index = self.index - self.path_loop.init.len();
+            Some(self.path_loop.sequence[loop_index % self.path_loop.sequence.len()])
+        };
+        self.index += 1;
+        result
     }
 }
 
@@ -267,8 +374,51 @@ mod test {
         assert_eq!(result, 6);
     }
 
+    fn sample_input_for_ghosts() -> DesertMap {
+        let input = indoc! {"
+            LR
+
+            11A = (11B, XXX)
+            11B = (XXX, 11Z)
+            11Z = (11B, XXX)
+            22A = (22B, XXX)
+            22B = (22C, 22C)
+            22C = (22Z, 22Z)
+            22Z = (22B, 22B)
+            XXX = (XXX, XXX)
+        "};
+        DesertMap::from_str(input).unwrap()
+    }
+
     #[test]
     fn test_navigate_for_ghosts() {
+        let desert_map = sample_input_for_ghosts();
+        let result = desert_map.steps_to_reach_ghostly_destinations().unwrap();
+        assert_eq!(result, 6);
+    }
+
+    #[test]
+    fn test_loop_equivalence() {
+        let desert_map = sample_input_for_ghosts();
+        let loop1 = desert_map
+            .find_loop(NodeLabel::from_str("11A").unwrap())
+            .unwrap();
+        let path1 = desert_map.path(NodeLabel::from_str("11A").unwrap());
+        for (i, (path_node, loop_node)) in path1.zip(&loop1).take(100).enumerate() {
+            assert_eq!(path_node.unwrap().0, loop_node, "step {}", i);
+        }
+
+        let loop1 = desert_map
+            .find_loop(NodeLabel::from_str("22A").unwrap())
+            .unwrap();
+        let path1 = desert_map.path(NodeLabel::from_str("22A").unwrap());
+        for (i, (path_node, loop_node)) in path1.zip(&loop1).take(100).enumerate() {
+            assert_eq!(path_node.unwrap().0, loop_node, "step {}", i);
+        }
+    }
+
+    #[test]
+    fn explore() {
         let desert_map = DesertMap::from_str(indoc! {"
             LR
 
@@ -282,7 +432,13 @@ mod test {
             XXX = (XXX, XXX)
         "})
         .unwrap();
-        let result = desert_map.steps_to_reach_ghostly_destinations().unwrap();
-        assert_eq!(result, 6);
+
+        desert_map
+            .find_loop(NodeLabel::from_str("11A").unwrap())
+            .unwrap();
+        desert_map
+            .find_loop(NodeLabel::from_str("22A").unwrap())
+            .unwrap();
+        panic!();
     }
 }
