@@ -28,7 +28,11 @@ impl Day for Day8 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            Ok(puzzle_input()?
+                .steps_to_reach_ghostly_destinations()?
+                .to_string())
+        }))
     }
 }
 
@@ -40,6 +44,16 @@ enum Direction {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct NodeLabel([u8; 3]);
+
+impl NodeLabel {
+    fn is_start(&self) -> bool {
+        self.0[2] == 'A' as u8
+    }
+
+    fn is_destination(&self) -> bool {
+        self.0[2] == 'Z' as u8
+    }
+}
 
 impl Display for NodeLabel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -122,6 +136,39 @@ impl DesertMap {
         let zzz: NodeLabel = "ZZZ".parse().unwrap();
         self.steps_to_reach(zzz)
     }
+
+    fn steps_to_reach_ghostly_destinations(&self) -> Result<u32> {
+        let mut current_nodes = self
+            .network
+            .0
+            .keys()
+            .copied()
+            .filter(|label| label.is_start())
+            .collect_vec();
+        let mut steps = 0;
+        let mut instruction_index = 0;
+        while !current_nodes.iter().all(|label| label.is_destination()) {
+            let instruction = self.instructions[instruction_index];
+            let next_nodes = current_nodes
+                .iter()
+                .map(|label| {
+                    let node = self
+                        .network
+                        .0
+                        .get(label)
+                        .ok_or(anyhow!("Couldn't find a node with label {}", label))?;
+                    match instruction {
+                        Direction::Right => Ok(node.right),
+                        Direction::Left => Ok(node.left),
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
+            current_nodes = next_nodes;
+            steps += 1;
+            instruction_index = (instruction_index + 1) % self.instructions.len();
+        }
+        Ok(steps)
+    }
 }
 
 impl FromStr for DesertMap {
@@ -138,7 +185,8 @@ impl FromStr for DesertMap {
                 _ => Err(anyhow!("Invalid direction: {}", char)),
             })
             .collect::<Result<Vec<_>>>()?;
-        let node_line_pattern = Regex::new("^([A-Z]{3}) = \\(([A-Z]{3}), ([A-Z]{3})\\)$").unwrap();
+        let node_line_pattern =
+            Regex::new("^([A-Z0-9]{3}) = \\(([A-Z0-9]{3}), ([A-Z0-9]{3})\\)$").unwrap();
         let nodes = nodes_str
             .lines()
             .map(|node_line| {
@@ -169,7 +217,12 @@ mod test {
         assert_eq!(super::Day8.part1().unwrap().unwrap(), "19199".to_string(),);
     }
 
-    fn sample_input_1() -> DesertMap {
+    // #[test]
+    // fn test_part2() {
+    //     assert_eq!(super::Day8.part2().unwrap().unwrap(), "0".to_string(),);
+    // }
+
+    fn sample_input() -> DesertMap {
         let input = indoc! {"
             RL
 
@@ -186,7 +239,7 @@ mod test {
 
     #[test]
     fn test_parse() {
-        let desert_map = sample_input_1();
+        let desert_map = sample_input();
         assert_eq!(desert_map.instructions.len(), 2);
         assert_eq!(desert_map.network.0.len(), 7);
         assert!(desert_map.network.0.contains_key(&"AAA".parse().unwrap()));
@@ -195,7 +248,7 @@ mod test {
 
     #[test]
     fn test_navigate() {
-        let desert_map = sample_input_1();
+        let desert_map = sample_input();
         let result = desert_map.steps_to_reach_zzz().unwrap();
         assert_eq!(result, 2);
     }
@@ -211,6 +264,25 @@ mod test {
         "})
         .unwrap();
         let result = desert_map.steps_to_reach_zzz().unwrap();
+        assert_eq!(result, 6);
+    }
+
+    #[test]
+    fn test_navigate_for_ghosts() {
+        let desert_map = DesertMap::from_str(indoc! {"
+            LR
+
+            11A = (11B, XXX)
+            11B = (XXX, 11Z)
+            11Z = (11B, XXX)
+            22A = (22B, XXX)
+            22B = (22C, 22C)
+            22C = (22Z, 22Z)
+            22Z = (22B, 22B)
+            XXX = (XXX, XXX)
+        "})
+        .unwrap();
+        let result = desert_map.steps_to_reach_ghostly_destinations().unwrap();
         assert_eq!(result, 6);
     }
 }
