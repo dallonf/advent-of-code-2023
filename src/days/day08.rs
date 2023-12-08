@@ -185,26 +185,95 @@ impl DesertMap {
             .copied()
             .filter(|label| label.is_start())
             .collect_vec();
+        #[derive(Debug, Clone)]
+        struct LoopInfo {
+            init_length: usize,
+            sequence_length: usize,
+            destination_indices_in_sequence: Vec<usize>,
+        }
         let loops = starting_nodes
             .par_iter()
-            .map(|starting_node| self.find_loop(*starting_node))
+            .map(|starting_node| {
+                let path_loop = self.find_loop(*starting_node)?;
+                let destination_indices = path_loop
+                    .sequence
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, label)| label.is_destination())
+                    .map(|(index, _)| index)
+                    .collect();
+                Ok(LoopInfo {
+                    init_length: path_loop.init.len(),
+                    sequence_length: path_loop.sequence.len(),
+                    destination_indices_in_sequence: destination_indices,
+                })
+            })
             .collect::<Result<Vec<_>>>()?;
-        let mut loop_iterators = loops
+
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        struct WarmLoopInfo {
+            starting_index: usize,
+            sequence_length: usize,
+            destination_indices_in_sequence: Vec<usize>,
+        }
+
+        let max_init_length = loops.iter().map(|info| info.init_length).max().unwrap();
+        let warm_loops = loops
             .iter()
-            .map(|loop_| loop_.into_iter())
+            .map(|info| {
+                let starting_index = max_init_length - info.init_length;
+                let starting_index = starting_index % info.sequence_length;
+                WarmLoopInfo {
+                    starting_index,
+                    sequence_length: info.sequence_length,
+                    destination_indices_in_sequence: info.destination_indices_in_sequence.clone(),
+                }
+            })
             .collect::<Vec<_>>();
 
-        let mut steps = 0;
-        let mut current_nodes = starting_nodes;
-        while !current_nodes.iter().all(|label| label.is_destination()) {
-            for (i, loop_iter) in loop_iterators.iter_mut().enumerate() {
-                let next_node = loop_iter.next().unwrap();
-                current_nodes[i] = next_node;
+        let longest_loop = warm_loops
+            .iter()
+            .max_by_key(|info| info.sequence_length)
+            .unwrap();
+        let remaining_loops = warm_loops
+            .iter()
+            .filter(|info| info != &longest_loop)
+            .collect::<Vec<_>>();
+
+        for longest_loop_destination_index in &longest_loop.destination_indices_in_sequence {
+            let matches_all_other_loops = remaining_loops.iter().all(|info| {
+                println!(
+                    "comparing {:?} to {:?} ({})",
+                    info, longest_loop, longest_loop_destination_index
+                );
+                let mut longest_loop_destination_index_relative_to_other_loop =
+                    (*longest_loop_destination_index as isize
+                        + longest_loop.starting_index as isize
+                        - info.starting_index as isize)
+                        % (info.sequence_length as isize);
+                if longest_loop_destination_index_relative_to_other_loop < 0 {
+                    longest_loop_destination_index_relative_to_other_loop +=
+                        longest_loop.sequence_length as isize;
+                }
+                let longest_loop_destination_index_relative_to_other_loop =
+                    longest_loop_destination_index_relative_to_other_loop as usize;
+                dbg!(longest_loop_destination_index_relative_to_other_loop);
+                info.destination_indices_in_sequence
+                    .iter()
+                    .any(|other_loop_destination_index| {
+                        dbg!(other_loop_destination_index);
+                        dbg!(longest_loop_destination_index_relative_to_other_loop);
+                        *other_loop_destination_index
+                            == longest_loop_destination_index_relative_to_other_loop
+                    })
+            });
+            if matches_all_other_loops {
+                return Ok(
+                    (*longest_loop_destination_index + longest_loop.starting_index + 1) as u32,
+                );
             }
-            steps += 1;
         }
-        // don't count the first step, which is just the starting nodes
-        Ok(steps - 1)
+        Err(anyhow!("No match found"))
     }
 }
 
@@ -418,27 +487,64 @@ mod test {
     }
 
     #[test]
-    fn explore() {
-        let desert_map = DesertMap::from_str(indoc! {"
-            LR
+    fn test_assumptions() {
+        let puzzle_input = puzzle_input().unwrap();
+        let sample_input = sample_input_for_ghosts();
 
-            11A = (11B, XXX)
-            11B = (XXX, 11Z)
-            11Z = (11B, XXX)
-            22A = (22B, XXX)
-            22B = (22C, 22C)
-            22C = (22Z, 22Z)
-            22Z = (22B, 22B)
-            XXX = (XXX, XXX)
-        "})
-        .unwrap();
+        let puzzle_starting_nodes = puzzle_input
+            .network
+            .0
+            .keys()
+            .copied()
+            .filter(|label| label.is_start())
+            .collect_vec();
+        let puzzle_loops = puzzle_starting_nodes
+            .iter()
+            .map(|starting_node| puzzle_input.find_loop(*starting_node))
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
 
-        desert_map
-            .find_loop(NodeLabel::from_str("11A").unwrap())
+        let sample_loops = sample_input
+            .network
+            .0
+            .keys()
+            .copied()
+            .filter(|label| label.is_start())
+            .map(|starting_node| sample_input.find_loop(starting_node))
+            .collect::<Result<Vec<_>>>()
             .unwrap();
-        desert_map
-            .find_loop(NodeLabel::from_str("22A").unwrap())
-            .unwrap();
-        panic!();
+
+        let all_loops = puzzle_loops.iter().chain(sample_loops.iter()).collect_vec();
+
+        for path_loop in &all_loops {
+            let starting_node = path_loop.init[0];
+            let destinations_in_init = path_loop
+                .init
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, label)| label.is_destination())
+                .collect_vec();
+            let destinations_in_sequence = path_loop
+                .sequence
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, label)| label.is_destination())
+                .collect_vec();
+            assert_eq!(
+                destinations_in_init.len(),
+                0,
+                "path starting at {} should not have destinations in init. found: {:?}",
+                starting_node,
+                destinations_in_init
+            );
+            assert!(
+                destinations_in_sequence.len() >= 1,
+                "path starting at {} should have at least one destination in sequence. found: {:?}",
+                starting_node,
+                destinations_in_sequence
+            );
+        }
     }
 }
