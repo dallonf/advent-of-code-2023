@@ -27,13 +27,18 @@ impl Day for Day8 {
         }))
     }
 
+    #[cfg(feature = "slow_solutions")]
     fn part2(&self) -> Option<Result<String>> {
-        // None
         Some(try_block(move || {
             Ok(puzzle_input()?
                 .steps_to_reach_ghostly_destinations()?
                 .to_string())
         }))
+    }
+
+    #[cfg(not(feature = "slow_solutions"))]
+    fn part2(&self) -> Option<Result<String>> {
+        None
     }
 }
 
@@ -46,6 +51,7 @@ enum Direction {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct NodeLabel([u8; 3]);
 
+#[cfg(any(feature = "slow_solutions", test))]
 impl NodeLabel {
     fn is_start(&self) -> bool {
         self.0[2] == 'A' as u8
@@ -134,6 +140,7 @@ impl DesertMap {
         self.steps_to_reach(zzz)
     }
 
+    #[cfg(any(feature = "slow_solutions", test))]
     fn find_loop(&self, starting_node: NodeLabel) -> Result<PathLoop> {
         let mut current_node = starting_node;
         let mut sequence: Vec<NodeLabel> = vec![];
@@ -178,6 +185,7 @@ impl DesertMap {
         })
     }
 
+    #[cfg(feature = "slow_solutions")]
     fn steps_to_reach_ghostly_destinations(&self) -> Result<usize> {
         let starting_nodes = self
             .network
@@ -390,6 +398,7 @@ mod test {
         assert_eq!(super::Day8.part1().unwrap().unwrap(), "19199".to_string(),);
     }
 
+    #[cfg(feature = "slow_solutions")]
     #[test]
     fn test_part2() {
         let result = super::Day8.part2().unwrap().unwrap();
@@ -462,6 +471,7 @@ mod test {
         DesertMap::from_str(input).unwrap()
     }
 
+    #[cfg(feature = "slow_solutions")]
     #[test]
     fn test_navigate_for_ghosts() {
         let desert_map = sample_input_for_ghosts();

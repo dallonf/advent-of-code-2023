@@ -77,7 +77,7 @@ mod test {
 
     #[test]
     fn test_part2() {
-        assert_eq!(super::Day9.part2().unwrap().unwrap(), "0".to_string());
+        assert_eq!(super::Day9.part2().unwrap().unwrap(), "908".to_string());
     }
 
     fn sample_input() -> Vec<Vec<i32>> {
