@@ -27,18 +27,12 @@ impl Day for Day8 {
         }))
     }
 
-    #[cfg(feature = "slow_solutions")]
     fn part2(&self) -> Option<Result<String>> {
         Some(try_block(move || {
             Ok(puzzle_input()?
                 .steps_to_reach_ghostly_destinations()?
                 .to_string())
         }))
-    }
-
-    #[cfg(not(feature = "slow_solutions"))]
-    fn part2(&self) -> Option<Result<String>> {
-        None
     }
 }
 
@@ -51,7 +45,6 @@ enum Direction {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct NodeLabel([u8; 3]);
 
-#[cfg(any(feature = "slow_solutions", test))]
 impl NodeLabel {
     fn is_start(&self) -> bool {
         self.0[2] == 'A' as u8
@@ -140,7 +133,6 @@ impl DesertMap {
         self.steps_to_reach(zzz)
     }
 
-    #[cfg(any(feature = "slow_solutions", test))]
     fn find_loop(&self, starting_node: NodeLabel) -> Result<PathLoop> {
         let mut current_node = starting_node;
         let mut sequence: Vec<NodeLabel> = vec![];
@@ -185,8 +177,46 @@ impl DesertMap {
         })
     }
 
-    #[cfg(feature = "slow_solutions")]
     fn steps_to_reach_ghostly_destinations(&self) -> Result<usize> {
+        let starting_nodes = self
+            .network
+            .0
+            .keys()
+            .copied()
+            .filter(|label| label.is_start())
+            .collect_vec();
+        let loops: Vec<PathLoop> = starting_nodes
+            .par_iter()
+            .map(|it| self.find_loop(*it))
+            .collect::<Result<_>>()?;
+        let times_til_first_destination = loops.into_iter().map(|path_loop| {
+            let first_destination = path_loop
+                .sequence
+                .iter()
+                .enumerate()
+                .find_map(|(i, label)| {
+                    if label.is_destination() {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or(anyhow!("No destinations in loop"))?;
+            Ok(path_loop.init.len() + first_destination)
+        });
+        times_til_first_destination
+            .reduce(|a, b| match (a, b) {
+                (Ok(a), Ok(b)) => Ok(num::integer::lcm(a, b)),
+                (Err(err), Ok(_)) => Err(err),
+                (Ok(_), Err(err)) => Err(err),
+                (Err(err1), Err(_)) => Err(err1),
+            })
+            .ok_or(anyhow!("No loops found"))
+            .and_then(|it| it)
+    }
+
+    #[cfg(feature = "slow_solutions")]
+    fn steps_to_reach_ghostly_destinations_brute_force(&self) -> Result<usize> {
         let starting_nodes = self
             .network
             .0
@@ -398,7 +428,6 @@ mod test {
         assert_eq!(super::Day8.part1().unwrap().unwrap(), "19199".to_string(),);
     }
 
-    #[cfg(feature = "slow_solutions")]
     #[test]
     fn test_part2() {
         let result = super::Day8.part2().unwrap().unwrap();
@@ -471,12 +500,31 @@ mod test {
         DesertMap::from_str(input).unwrap()
     }
 
-    #[cfg(feature = "slow_solutions")]
     #[test]
     fn test_navigate_for_ghosts() {
         let desert_map = sample_input_for_ghosts();
         let result = desert_map.steps_to_reach_ghostly_destinations().unwrap();
         assert_eq!(result, 6);
+    }
+
+    #[cfg(feature = "slow_solutions")]
+    #[test]
+    fn test_navigate_for_ghosts_brute_force() {
+        let desert_map = sample_input_for_ghosts();
+        let result = desert_map
+            .steps_to_reach_ghostly_destinations_brute_force()
+            .unwrap();
+        assert_eq!(result, 6);
+    }
+
+    #[cfg(feature = "slow_solutions")]
+    #[test]
+    fn test_part_two_brute_force() {
+        let desert_map = puzzle_input().unwrap();
+        let result = desert_map
+            .steps_to_reach_ghostly_destinations_brute_force()
+            .unwrap();
+        assert_eq!(result, 13663968099527);
     }
 
     #[test]
