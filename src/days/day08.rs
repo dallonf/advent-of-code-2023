@@ -28,12 +28,12 @@ impl Day for Day8 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
-        // Some(try_block(move || {
-        //     Ok(puzzle_input()?
-        //         .steps_to_reach_ghostly_destinations()?
-        //         .to_string())
-        // }))
+        // None
+        Some(try_block(move || {
+            Ok(puzzle_input()?
+                .steps_to_reach_ghostly_destinations()?
+                .to_string())
+        }))
     }
 }
 
@@ -47,11 +47,9 @@ enum Direction {
 struct NodeLabel([u8; 3]);
 
 impl NodeLabel {
-    #[cfg(test)]
     fn is_start(&self) -> bool {
         self.0[2] == 'A' as u8
     }
-    #[cfg(test)]
 
     fn is_destination(&self) -> bool {
         self.0[2] == 'Z' as u8
@@ -136,7 +134,6 @@ impl DesertMap {
         self.steps_to_reach(zzz)
     }
 
-    #[cfg(test)]
     fn find_loop(&self, starting_node: NodeLabel) -> Result<PathLoop> {
         let mut current_node = starting_node;
         let mut sequence: Vec<NodeLabel> = vec![];
@@ -181,7 +178,6 @@ impl DesertMap {
         })
     }
 
-    #[cfg(test)]
     fn steps_to_reach_ghostly_destinations(&self) -> Result<usize> {
         let starting_nodes = self
             .network
@@ -194,11 +190,86 @@ impl DesertMap {
             .par_iter()
             .map(|it| self.find_loop(*it))
             .collect::<Result<_>>()?;
-        let result = loops
-            .iter()
-            .map(|it| (it.init.len() + it.sequence.len() - 1) as u128)
-            .reduce(|a, b| num::integer::lcm(a, b));
-        result.map(|it| it as usize).ok_or(anyhow!("Empty input"))
+
+        #[derive(Debug, Clone)]
+        struct LoopInfo {
+            init_length: usize,
+            sequence_length: usize,
+            destination_indices: Vec<usize>,
+        }
+        let loops_info = loops
+            .into_iter()
+            .map(|it| LoopInfo {
+                init_length: it.init.len(),
+                sequence_length: it.sequence.len(),
+                destination_indices: it
+                    .sequence
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, node)| if node.is_destination() { Some(i) } else { None })
+                    .collect_vec(),
+            })
+            .collect_vec();
+
+        if loops_info.len() == 0 {
+            return Err(anyhow!("No loops found"));
+        }
+
+        let mut current_step = loops_info.iter().map(|it| it.init_length).max().unwrap();
+        const CHECKPOINT_DISTANCE: usize = 10_000_000_000;
+        let mut last_checkpoint = CHECKPOINT_DISTANCE;
+        loop {
+            if current_step > last_checkpoint + CHECKPOINT_DISTANCE {
+                last_checkpoint += CHECKPOINT_DISTANCE;
+            }
+            let loops_with_relative_index = loops_info
+                .iter()
+                .map(|loop_info| {
+                    let index_after_init = current_step - loop_info.init_length;
+                    let index = index_after_init % loop_info.sequence_length;
+                    (index, loop_info)
+                })
+                .collect_vec();
+
+            let at_destination_in_each_loop =
+                loops_with_relative_index
+                    .iter()
+                    .all(|(relative_index, loop_info)| {
+                        loop_info.destination_indices.contains(relative_index)
+                    });
+            if at_destination_in_each_loop {
+                break;
+            }
+
+            let next_step = loops_with_relative_index
+                .iter()
+                .flat_map(|(relative_index, loop_info)| {
+                    // 0 relative index in absolute space
+                    let absolute_index_of_loop_start = {
+                        let index_after_init = current_step - loop_info.init_length;
+                        let loops_so_far = index_after_init / loop_info.sequence_length;
+                        loop_info.init_length + (loops_so_far * loop_info.sequence_length)
+                    };
+                    loop_info
+                        .destination_indices
+                        .iter()
+                        .map(move |destination_index| {
+                            if destination_index <= relative_index {
+                                // if we've already passed this detination, give the index in the next loop
+                                absolute_index_of_loop_start
+                                    + loop_info.sequence_length
+                                    + destination_index
+                            } else {
+                                absolute_index_of_loop_start + destination_index
+                            }
+                        })
+                })
+                .min()
+                .unwrap();
+            current_step = next_step;
+        }
+
+        Ok(current_step)
     }
 }
 
@@ -319,16 +390,16 @@ mod test {
         assert_eq!(super::Day8.part1().unwrap().unwrap(), "19199".to_string(),);
     }
 
-    // #[test]
-    // fn test_part2() {
-    //     let result = super::Day8.part2().unwrap().unwrap();
-    //     let result: u64 = result.parse().unwrap();
-    //     assert!(result > 1677130951);
-    //     assert!(result > 1677130952); // just in case it was an off-by-one error :P
-    //     assert_ne!(result, 12457759249955183594);
-    //     assert_ne!(result, 13333977633595132672);
-    //     assert_eq!(super::Day8.part2().unwrap().unwrap(), "0".to_string(),);
-    // }
+    #[test]
+    fn test_part2() {
+        let result = super::Day8.part2().unwrap().unwrap();
+        let result: u64 = result.parse().unwrap();
+        assert!(result > 1677130951, "{} > 1677130951", result);
+        assert!(result > 1677130952, "{} > 1677130952", result); // just in case it was an off-by-one error :P
+        assert_ne!(result, 12457759249955183594);
+        assert_ne!(result, 13333977633595132672);
+        assert_eq!(result, 13663968099527);
+    }
 
     fn sample_input() -> DesertMap {
         let input = indoc! {"
@@ -394,7 +465,6 @@ mod test {
     #[test]
     fn test_navigate_for_ghosts() {
         let desert_map = sample_input_for_ghosts();
-        // let desert_map = puzzle_input().unwrap();
         let result = desert_map.steps_to_reach_ghostly_destinations().unwrap();
         assert_eq!(result, 6);
     }
