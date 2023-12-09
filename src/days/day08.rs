@@ -182,7 +182,7 @@ impl DesertMap {
     }
 
     #[cfg(test)]
-    fn steps_to_reach_ghostly_destinations(&self) -> Result<u32> {
+    fn steps_to_reach_ghostly_destinations(&self) -> Result<usize> {
         let starting_nodes = self
             .network
             .0
@@ -190,53 +190,15 @@ impl DesertMap {
             .copied()
             .filter(|label| label.is_start())
             .collect_vec();
-        #[derive(Debug)]
-        struct PathInfo<'a> {
-            first_destination: Option<usize>,
-            time_until_next_destination: Option<usize>,
-            iterator: DesertPathIterator<'a>,
-        }
-        let mut all_paths = starting_nodes
+        let loops: Vec<PathLoop> = starting_nodes
+            .par_iter()
+            .map(|it| self.find_loop(*it))
+            .collect::<Result<_>>()?;
+        let result = loops
             .iter()
-            .map(|node| PathInfo {
-                first_destination: None,
-                time_until_next_destination: None,
-                iterator: self.path(*node),
-            })
-            .collect_vec();
-        let mut steps = 0;
-        while all_paths
-            .iter()
-            .any(|it| it.first_destination.is_none() || it.time_until_next_destination.is_none())
-        {
-            for path in all_paths.iter_mut() {
-                if path.first_destination.is_none() {
-                    let (node, _) = path.iterator.next().unwrap()?;
-                    if node.is_destination() {
-                        path.first_destination = Some(steps);
-                    }
-                } else if path.time_until_next_destination.is_none() {
-                    let (node, _) = path.iterator.next().unwrap()?;
-                    if node.is_destination() {
-                        path.time_until_next_destination =
-                            Some(steps - path.first_destination.unwrap());
-                    }
-                }
-            }
-            steps += 1;
-        }
-        for path in all_paths.iter() {
-            // apparently these are always the same?? That lets us not worry about offsets
-            assert_eq!(path.first_destination, path.time_until_next_destination);
-        }
-        let phase_length = all_paths
-            .iter()
-            .map(|it| it.time_until_next_destination.unwrap())
+            .map(|it| (it.init.len() + it.sequence.len() - 1) as u128)
             .reduce(|a, b| num::integer::lcm(a, b));
-
-        phase_length
-            .map(|it| it as u32)
-            .ok_or(anyhow!("No match found"))
+        result.map(|it| it as usize).ok_or(anyhow!("Empty input"))
     }
 }
 
@@ -359,8 +321,12 @@ mod test {
 
     // #[test]
     // fn test_part2() {
-    //     // not 1677130951; too low
-    //     // and just in case it was an off-by-one error, not 1677130952 either :P
+    //     let result = super::Day8.part2().unwrap().unwrap();
+    //     let result: u64 = result.parse().unwrap();
+    //     assert!(result > 1677130951);
+    //     assert!(result > 1677130952); // just in case it was an off-by-one error :P
+    //     assert_ne!(result, 12457759249955183594);
+    //     assert_ne!(result, 13333977633595132672);
     //     assert_eq!(super::Day8.part2().unwrap().unwrap(), "0".to_string(),);
     // }
 
