@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crate::framework::Day;
 
 mod days {
@@ -33,19 +35,41 @@ fn main() {
         if day.day_number() == 0 {
             println!("WARNING: Did you forget to change the day_number() for one of the days?");
         }
+        let day1_start = Instant::now();
         if let Some(output) = day.part1() {
+            let day1_elapsed = day1_start.elapsed();
             println!(
-                "Day {}, part 1: {}",
+                "Day {}, part 1: {} ({})",
                 day.day_number(),
-                output.unwrap_or_else(|err| err.to_string())
+                output.unwrap_or_else(|err| err.to_string()),
+                format_duration(&day1_elapsed)
             );
         }
+        let day2_start = Instant::now();
         if let Some(output) = day.part2() {
+            let day2_elapsed = day2_start.elapsed();
             println!(
-                "Day {}, part 2: {}",
+                "Day {}, part 2: {} ({})",
                 day.day_number(),
-                output.unwrap_or_else(|err| err.to_string())
+                output.unwrap_or_else(|err| err.to_string()),
+                format_duration(&day2_elapsed)
             );
         }
     }
+}
+
+fn format_duration(input: &Duration) -> String {
+    let total_seconds = input.as_secs();
+    let millis = input.as_millis() % 1000;
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+    let mut output = "".to_string();
+    if minutes > 0 {
+        output += &format!("{}m ", minutes);
+    }
+    if seconds > 0 {
+        output += &format!("{}s ", seconds);
+    }
+    output += &format!("{}ms", millis);
+    output
 }
