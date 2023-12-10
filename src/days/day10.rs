@@ -1,8 +1,8 @@
 // Day 10: Pipe Maze
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Display;
-use std::ops::Add;
+use std::ops::{Add, AddAssign};
 use std::str::FromStr;
 
 use tap::Pipe;
@@ -103,6 +103,15 @@ impl IntVector {
     fn new(x: Units, y: Units) -> Self {
         Self { x, y }
     }
+
+    fn cardinal_neighbors(self) -> Vec<Self> {
+        vec![
+            IntVector::new(self.x - 1, self.y),
+            IntVector::new(self.x + 1, self.y),
+            IntVector::new(self.x, self.y - 1),
+            IntVector::new(self.x, self.y + 1),
+        ]
+    }
 }
 
 impl Add for IntVector {
@@ -113,6 +122,12 @@ impl Add for IntVector {
             x: self.x + rhs.x,
             y: self.y + rhs.y,
         }
+    }
+}
+
+impl AddAssign for IntVector {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
     }
 }
 
@@ -143,6 +158,39 @@ impl Grid {
             .iter()
             .position(|tile| tile == &Some(MetalPipe::Start))
             .map(|index| self.coordinate_for_index(index))
+    }
+
+    fn find_kind_of_start(&self) -> Option<MetalPipe> {
+        let start_coord = self.find_start_coordinate()?;
+        let points_back_to_start = |coord: IntVector| {
+            if let Some(pipe) = self.get(coord) {
+                let mut pipe_neighbors = pipe
+                    .adjacent_directions()
+                    .into_iter()
+                    .map(|direction| direction + coord);
+                pipe_neighbors.any(|coord| coord == start_coord)
+            } else {
+                return false;
+            }
+        };
+        let north_points_back = points_back_to_start(start_coord + IntVector::new(0, -1));
+        let south_points_back = points_back_to_start(start_coord + IntVector::new(0, 1));
+        let east_points_back = points_back_to_start(start_coord + IntVector::new(1, 0));
+        let west_points_back = points_back_to_start(start_coord + IntVector::new(-1, 0));
+        match (
+            north_points_back,
+            south_points_back,
+            east_points_back,
+            west_points_back,
+        ) {
+            (true, true, false, false) => Some(MetalPipe::NS),
+            (false, false, true, true) => Some(MetalPipe::EW),
+            (true, false, true, false) => Some(MetalPipe::NE),
+            (true, false, false, true) => Some(MetalPipe::NW),
+            (false, true, false, true) => Some(MetalPipe::SW),
+            (false, true, true, false) => Some(MetalPipe::SE),
+            _ => None,
+        }
     }
 
     fn find_farthest_distance_from_start(&self) -> Result<usize> {
@@ -205,6 +253,106 @@ impl Grid {
             .copied()
             .unwrap()
             .pipe(Ok)
+    }
+
+    fn find_enclosed_tiles(&self) -> Result<u64> {
+        let start = self
+            .find_start_coordinate()
+            .ok_or(anyhow!("no start found"))?;
+
+        // corners don't have normals, so they'll be None
+        let mut loop_inside_normals: HashMap<IntVector, Option<IntVector>> = HashMap::new();
+        let mut current_location = start;
+        let mut current_direction = IntVector::new(1, 0);
+        while !loop_inside_normals.contains_key(&current_location) {
+            let current_pipe = if current_location == start {
+                self.find_kind_of_start()
+                    .ok_or(anyhow!("Can't find the kind of start"))?
+            } else {
+                self.get(current_location)
+                    .ok_or(anyhow!("Broken pipe at {:?}", current_location))?
+            };
+            let inside_normal = match (current_pipe, current_direction) {
+                (MetalPipe::EW, IntVector { x: 1, y: 0 }) => Some(IntVector::new(0, 1)),
+                (MetalPipe::EW, IntVector { x: -1, y: 0 }) => Some(IntVector::new(0, -1)),
+                (MetalPipe::NS, IntVector { x: 0, y: 1 }) => Some(IntVector::new(-1, 0)),
+                (MetalPipe::NS, IntVector { x: 0, y: -1 }) => Some(IntVector::new(1, 0)),
+                _ => None,
+            };
+            loop_inside_normals.insert(current_location, inside_normal);
+
+            let reverse_direction =
+                IntVector::new(current_direction.x * -1, current_direction.y * -1);
+            let new_direction = current_pipe
+                .adjacent_directions()
+                .into_iter()
+                .find(|&direction| direction != reverse_direction)
+                .ok_or(anyhow!("Can't find the next direction to go"))?;
+            current_direction = new_direction;
+            current_location += current_direction;
+        }
+
+        let mut enclosed: HashSet<IntVector> = HashSet::new();
+        let immediate_inside_tiles = loop_inside_normals
+            .iter()
+            .filter_map(|(tile, inside_normal)| {
+                if let Some(inside_normal) = inside_normal {
+                    Some(*tile + *inside_normal)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut queue = VecDeque::from_iter(immediate_inside_tiles);
+        let mut timeout = 100;
+        while let Some(next) = queue.pop_front() {
+            if timeout < 0 {
+                return Err(anyhow!("timeout"));
+            } else {
+                timeout -= 1;
+            }
+            if enclosed.contains(&next) || loop_inside_normals.contains_key(&next) {
+                // stop if we've already visited this tile or if it's part of the loop
+                continue;
+            }
+            enclosed.insert(next);
+            let neighbors = next.cardinal_neighbors();
+            for neighbor in neighbors {
+                queue.push_back(neighbor);
+            }
+        }
+
+        for (y, row) in self.tiles.chunks(self.width).enumerate() {
+            let row_str = row
+                .iter()
+                .enumerate()
+                .map(|(x, _)| {
+                    let loop_normal = loop_inside_normals
+                        .get(&IntVector::new(x as Units, y as Units))
+                        .map(|found| {
+                            found
+                                .map(|it| match it {
+                                    IntVector { x: 1, y: 0 } => ">",
+                                    IntVector { x: -1, y: 0 } => "<",
+                                    IntVector { x: 0, y: 1 } => "V",
+                                    IntVector { x: 0, y: -1 } => "^",
+                                    _ => "X",
+                                })
+                                .unwrap_or("#".into())
+                        });
+                    if let Some(loop_normal) = loop_normal {
+                        loop_normal.to_owned()
+                    } else if enclosed.contains(&IntVector::new(x as Units, y as Units)) {
+                        "I".into()
+                    } else {
+                        ".".into()
+                    }
+                })
+                .join("");
+            println!("{}", row_str);
+        }
+
+        Ok(enclosed.len() as u64)
     }
 }
 
@@ -318,5 +466,50 @@ mod test {
         let grid = complex_input();
         let result = grid.find_farthest_distance_from_start().unwrap();
         assert_eq!(result, 8);
+    }
+
+    fn simple_enclosed() -> Grid {
+        let input = indoc! {"
+            ...........
+            .S-------7.
+            .|F-----7|.
+            .||.....||.
+            .||.....||.
+            .|L-7.F-J|.
+            .|..|.|..|.
+            .L--J.L--J.
+            ...........
+        "};
+        Grid::from_str(input).unwrap()
+    }
+
+    fn complex_enclosed() -> Grid {
+        let input = indoc! {"
+            FF7FSF7F7F7F7F7F---7
+            L|LJ||||||||||||F--J
+            FL-7LJLJ||||||LJL-77
+            F--JF--7||LJLJ7F7FJ-
+            L---JF-JLJ.||-FJLJJ7
+            |F|F-JF---7F7-L7L|7|
+            |FFJF7L7F-JF7|JL---7
+            7-L-JL7||F7|L7F-7F7|
+            L.L7LFJ|||||FJL7||LJ
+            L7JLJL-JLJLJL--JLJ.L
+        "};
+        Grid::from_str(input).unwrap()
+    }
+
+    #[test]
+    fn test_find_contained_tiles() {
+        let grid = simple_enclosed();
+        let result = grid.find_enclosed_tiles().unwrap();
+        assert_eq!(result, 4);
+    }
+
+    #[test]
+    fn test_find_contained_tiles_complex() {
+        let grid = complex_enclosed();
+        let result = grid.find_enclosed_tiles().unwrap();
+        assert_eq!(result, 10);
     }
 }
