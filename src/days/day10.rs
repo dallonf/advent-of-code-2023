@@ -178,8 +178,7 @@ impl Grid {
             .map(|index| self.coordinate_for_index(index))
     }
 
-    /// That is, the direction you would have been going when you reach the start pipe
-    fn find_kind_and_direction_of_start(&self) -> Result<(MetalPipe, IntVector)> {
+    fn find_kind_of_start(&self) -> Result<MetalPipe> {
         let start_coord = self
             .find_start_coordinate()
             .ok_or(anyhow!("no start coordinate exists"))?;
@@ -204,8 +203,8 @@ impl Grid {
             east_points_back,
             west_points_back,
         ) {
-            (false, true, true, false) => Ok((MetalPipe::SE, NORTH)),
-            (false, true, false, true) => Ok((MetalPipe::SW, EAST)),
+            (false, true, true, false) => Ok(MetalPipe::SE),
+            (false, true, false, true) => Ok(MetalPipe::SW),
             // We don't support every kind of start, because the inputs don't require that
             (north, south, east, west) => Err(anyhow!(
                 "Invalid start: {}{}{}{}",
@@ -280,145 +279,182 @@ impl Grid {
     }
 
     fn find_enclosed_tiles(&self) -> Result<u64> {
-        let start = self
-            .find_start_coordinate()
-            .ok_or(anyhow!("no start found"))?;
-        let (start_kind, start_direction) = self.find_kind_and_direction_of_start()?;
+        let attempt_1 = try_find_enclosed_tiles(self, false);
+        if let Ok(result) = attempt_1 {
+            return Ok(result);
+        }
+        let attempt_2 = try_find_enclosed_tiles(self, true);
+        return attempt_2.map_err(|err| match err {
+            FindEnclosedTilesError::OutOfBounds => anyhow!("Both directions went out of bounds"),
+            FindEnclosedTilesError::Other(err) => err,
+        });
 
-        fn inside_directions(pipe: MetalPipe, direction: IntVector) -> Result<Vec<IntVector>> {
-            // clockwise from the direction we're coming from
-            match (pipe, direction) {
-                (MetalPipe::NS, NORTH) => Ok(vec![EAST]),
-                (MetalPipe::NS, SOUTH) => Ok(vec![WEST]),
-
-                (MetalPipe::EW, EAST) => Ok(vec![SOUTH]),
-                (MetalPipe::EW, WEST) => Ok(vec![NORTH]),
-
-                (MetalPipe::NE, WEST) => Ok(vec![]),
-                (MetalPipe::NE, SOUTH) => Ok(vec![SOUTH, WEST]),
-
-                (MetalPipe::NW, SOUTH) => Ok(vec![]),
-                (MetalPipe::NW, EAST) => Ok(vec![SOUTH, EAST]),
-
-                (MetalPipe::SW, EAST) => Ok(vec![]),
-                (MetalPipe::SW, NORTH) => Ok(vec![NORTH, EAST]),
-
-                (MetalPipe::SE, NORTH) => Ok(vec![]),
-                (MetalPipe::SE, WEST) => Ok(vec![NORTH, WEST]),
-
-                (pipe, direction) => Err(anyhow!(
-                    "Can't resolve a {} ({:?}) going in direction {:?}",
-                    pipe.to_char(),
-                    pipe,
-                    direction
-                )),
+        enum FindEnclosedTilesError {
+            OutOfBounds,
+            Other(anyhow::Error),
+        }
+        impl From<anyhow::Error> for FindEnclosedTilesError {
+            fn from(value: anyhow::Error) -> Self {
+                FindEnclosedTilesError::Other(value)
             }
         }
 
-        let mut just_inside_tiles: HashSet<IntVector> = HashSet::new();
-        let mut loop_tiles = HashSet::new();
+        fn try_find_enclosed_tiles(
+            grid: &Grid,
+            reverse_start_direction: bool,
+        ) -> std::result::Result<u64, FindEnclosedTilesError> {
+            let start = grid
+                .find_start_coordinate()
+                .ok_or(anyhow!("no start found"))?;
+            let start_kind = grid.find_kind_of_start()?;
 
-        loop_tiles.insert(start);
-        for start_inside_direction in inside_directions(start_kind, start_direction)? {
-            just_inside_tiles.insert(start_inside_direction + start);
-        }
-        let mut current_direction = start_kind
-            .adjacent_directions()
-            .into_iter()
-            .find(|&direction| direction != start_direction.inverse())
-            .ok_or(anyhow!("Can't find the next direction to go from start"))?;
-        let mut current_location = start + current_direction;
+            let possible_start_directions: Box<[IntVector]> = start_kind
+                .adjacent_directions()
+                .iter()
+                .map(|direction| direction.inverse())
+                .collect();
 
-        while current_location != start {
-            let current_pipe = self
-                .get(current_location)
-                .ok_or(anyhow!("Broken pipe at {:?}", current_location))?;
-            loop_tiles.insert(current_location);
-            for inside_direction in inside_directions(current_pipe, current_direction)? {
-                just_inside_tiles.insert(current_location + inside_direction);
+            let start_direction = if reverse_start_direction {
+                possible_start_directions[1]
+            } else {
+                possible_start_directions[0]
+            };
+
+            fn inside_directions(pipe: MetalPipe, direction: IntVector) -> Result<Vec<IntVector>> {
+                // clockwise from the direction we're coming from
+                match (pipe, direction) {
+                    (MetalPipe::NS, NORTH) => Ok(vec![EAST]),
+                    (MetalPipe::NS, SOUTH) => Ok(vec![WEST]),
+
+                    (MetalPipe::EW, EAST) => Ok(vec![SOUTH]),
+                    (MetalPipe::EW, WEST) => Ok(vec![NORTH]),
+
+                    (MetalPipe::NE, WEST) => Ok(vec![]),
+                    (MetalPipe::NE, SOUTH) => Ok(vec![SOUTH, WEST]),
+
+                    (MetalPipe::NW, SOUTH) => Ok(vec![]),
+                    (MetalPipe::NW, EAST) => Ok(vec![SOUTH, EAST]),
+
+                    (MetalPipe::SW, EAST) => Ok(vec![]),
+                    (MetalPipe::SW, NORTH) => Ok(vec![NORTH, EAST]),
+
+                    (MetalPipe::SE, NORTH) => Ok(vec![]),
+                    (MetalPipe::SE, WEST) => Ok(vec![NORTH, WEST]),
+
+                    (pipe, direction) => Err(anyhow!(
+                        "Can't resolve a {} ({:?}) going in direction {:?}",
+                        pipe.to_char(),
+                        pipe,
+                        direction
+                    )),
+                }
             }
 
-            let new_direction = current_pipe
+            let mut just_inside_tiles: HashSet<IntVector> = HashSet::new();
+            let mut loop_tiles = HashSet::new();
+
+            loop_tiles.insert(start);
+            for start_inside_direction in inside_directions(start_kind, start_direction)? {
+                just_inside_tiles.insert(start_inside_direction + start);
+            }
+            let mut current_direction = start_kind
                 .adjacent_directions()
                 .into_iter()
-                .find(|&direction| direction != current_direction.inverse())
-                .ok_or(anyhow!("Can't find the next direction to go"))?;
-            current_direction = new_direction;
-            current_location += current_direction;
-        }
+                .find(|&direction| direction != start_direction.inverse())
+                .ok_or(anyhow!("Can't find the next direction to go from start"))?;
+            let mut current_location = start + current_direction;
 
-        for (y, row) in self.tiles.chunks(self.width).enumerate() {
-            let row_str = row
-                .iter()
-                .enumerate()
-                .map(|(x, _)| {
-                    let coord = IntVector::new(x as Units, y as Units);
-                    let pipe = if loop_tiles.contains(&coord) {
-                        Some(match self.get(coord) {
-                            Some(pipe) => pipe.to_char(),
-                            None => 'X',
-                        })
-                    } else {
-                        None
-                    };
-                    if let Some(pipe) = pipe {
-                        pipe.to_owned()
-                    } else if just_inside_tiles.contains(&coord) {
-                        'I'.into()
-                    } else {
-                        '.'.into()
-                    }
-                })
-                .join("");
-            println!("{}", row_str);
-        }
+            while current_location != start {
+                let current_pipe = grid
+                    .get(current_location)
+                    .ok_or(anyhow!("Broken pipe at {:?}", current_location))?;
+                loop_tiles.insert(current_location);
+                for inside_direction in inside_directions(current_pipe, current_direction)? {
+                    just_inside_tiles.insert(current_location + inside_direction);
+                }
 
-        let mut enclosed: HashSet<IntVector> = HashSet::new();
-        let mut queue = VecDeque::from_iter(just_inside_tiles.iter().copied());
-        while let Some(next) = queue.pop_front() {
-            if !self.in_bounds(next) {
-                return Err(anyhow!("Out of bounds: {:?}", next));
+                let new_direction = current_pipe
+                    .adjacent_directions()
+                    .into_iter()
+                    .find(|&direction| direction != current_direction.inverse())
+                    .ok_or(anyhow!("Can't find the next direction to go"))?;
+                current_direction = new_direction;
+                current_location += current_direction;
             }
-            if enclosed.contains(&next) || loop_tiles.contains(&next) {
-                // stop if we've already visited this tile or if it's part of the loop
-                continue;
-            }
-            enclosed.insert(next);
-            let neighbors = next.cardinal_neighbors();
-            for neighbor in neighbors {
-                queue.push_back(neighbor);
-            }
-        }
 
-        for (y, row) in self.tiles.chunks(self.width).enumerate() {
-            let row_str = row
-                .iter()
-                .enumerate()
-                .map(|(x, _)| {
-                    let coord = IntVector::new(x as Units, y as Units);
-                    let pipe = if loop_tiles.contains(&coord) {
-                        Some(match self.get(coord) {
-                            Some(pipe) => pipe.to_char(),
-                            None => 'X',
-                        })
-                    } else {
-                        None
-                    };
-                    if let Some(pipe) = pipe {
-                        pipe.to_owned()
-                    } else if just_inside_tiles.contains(&coord) {
-                        'I'.into()
-                    } else if enclosed.contains(&coord) {
-                        'i'.into()
-                    } else {
-                        '.'.into()
-                    }
-                })
-                .join("");
-            println!("{}", row_str);
-        }
+            // for (y, row) in grid.tiles.chunks(grid.width).enumerate() {
+            //     let row_str = row
+            //         .iter()
+            //         .enumerate()
+            //         .map(|(x, _)| {
+            //             let coord = IntVector::new(x as Units, y as Units);
+            //             let pipe = if loop_tiles.contains(&coord) {
+            //                 Some(match grid.get(coord) {
+            //                     Some(pipe) => pipe.to_char(),
+            //                     None => 'X',
+            //                 })
+            //             } else {
+            //                 None
+            //             };
+            //             if let Some(pipe) = pipe {
+            //                 pipe.to_owned()
+            //             } else if just_inside_tiles.contains(&coord) {
+            //                 'I'.into()
+            //             } else {
+            //                 '.'.into()
+            //             }
+            //         })
+            //         .join("");
+            //     println!("{}", row_str);
+            // }
 
-        Ok(enclosed.len() as u64)
+            let mut enclosed: HashSet<IntVector> = HashSet::new();
+            let mut queue = VecDeque::from_iter(just_inside_tiles.iter().copied());
+            while let Some(next) = queue.pop_front() {
+                if !grid.in_bounds(next) {
+                    return Err(FindEnclosedTilesError::OutOfBounds);
+                }
+                if enclosed.contains(&next) || loop_tiles.contains(&next) {
+                    // stop if we've already visited this tile or if it's part of the loop
+                    continue;
+                }
+                enclosed.insert(next);
+                let neighbors = next.cardinal_neighbors();
+                for neighbor in neighbors {
+                    queue.push_back(neighbor);
+                }
+            }
+
+            // for (y, row) in grid.tiles.chunks(grid.width).enumerate() {
+            //     let row_str = row
+            //         .iter()
+            //         .enumerate()
+            //         .map(|(x, _)| {
+            //             let coord = IntVector::new(x as Units, y as Units);
+            //             let pipe = if loop_tiles.contains(&coord) {
+            //                 Some(match grid.get(coord) {
+            //                     Some(pipe) => pipe.to_char(),
+            //                     None => 'X',
+            //                 })
+            //             } else {
+            //                 None
+            //             };
+            //             if let Some(pipe) = pipe {
+            //                 pipe.to_owned()
+            //             } else if just_inside_tiles.contains(&coord) {
+            //                 'I'.into()
+            //             } else if enclosed.contains(&coord) {
+            //                 'i'.into()
+            //             } else {
+            //                 '.'.into()
+            //             }
+            //         })
+            //         .join("");
+            //     println!("{}", row_str);
+            // }
+
+            Ok(enclosed.len() as u64)
+        }
     }
 }
 
@@ -475,12 +511,12 @@ mod test {
 
     #[test]
     fn test_part1() {
-        assert_eq!(super::Day10.part1().unwrap().unwrap(), "7097".to_string(),);
+        assert_eq!(super::Day10.part1().unwrap().unwrap(), "7097".to_string());
     }
 
     #[test]
     fn test_part2() {
-        assert_eq!(super::Day10.part2().unwrap().unwrap(), "0".to_string(),);
+        assert_eq!(super::Day10.part2().unwrap().unwrap(), "355".to_string());
     }
 
     #[test]
