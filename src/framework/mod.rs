@@ -1,5 +1,6 @@
 pub mod prelude;
 pub mod try_block;
+pub mod grid;
 
 pub trait Day {
     fn day_number(&self) -> u8;
