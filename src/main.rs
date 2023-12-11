@@ -14,6 +14,7 @@ mod days {
     pub mod day08;
     pub mod day09;
     pub mod day10;
+    pub mod day11;
 }
 mod framework;
 
@@ -31,6 +32,7 @@ fn main() {
         Box::new(days::day08::Day8),
         Box::new(days::day09::Day9),
         Box::new(days::day10::Day10),
+        Box::new(days::day11::Day11),
     ];
 
     for day in days.iter() {
