@@ -8,11 +8,11 @@ pub struct IntVector {
 }
 
 impl IntVector {
-    const fn new(x: isize, y: isize) -> Self {
+    pub const fn new(x: isize, y: isize) -> Self {
         Self { x, y }
     }
 
-    fn cardinal_neighbors(self) -> Vec<Self> {
+    pub fn cardinal_neighbors(self) -> Vec<Self> {
         vec![
             IntVector::new(self.x - 1, self.y),
             IntVector::new(self.x + 1, self.y),
@@ -21,8 +21,12 @@ impl IntVector {
         ]
     }
 
-    fn inverse(&self) -> IntVector {
+    pub fn inverse(&self) -> IntVector {
         IntVector::new(-self.x, -self.y)
+    }
+
+    pub fn manhattan_distance(&self, other: Self) -> usize {
+        ((self.x - other.x).abs() + (self.y - other.y).abs()) as usize
     }
 }
 
@@ -45,8 +49,8 @@ impl AddAssign for IntVector {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct GridShape {
-    width: usize,
-    height: usize,
+    pub width: usize,
+    pub height: usize,
 }
 
 impl GridShape {
@@ -98,5 +102,22 @@ impl GridShape {
             result.push('\n');
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_manhattan_distance() {
+        assert_eq!(
+            IntVector::new(1, 6).manhattan_distance(IntVector::new(5, 11)),
+            9
+        );
+        assert_eq!(
+            IntVector::new(4, 0).manhattan_distance(IntVector::new(9, 10)),
+            15
+        );
     }
 }
