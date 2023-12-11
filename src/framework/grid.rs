@@ -103,6 +103,12 @@ impl GridShape {
         }
         result
     }
+
+    /// Returns an iterator over all coordinates in the grid, left to right, top to bottom.
+    pub fn coord_iter(&self) -> impl Iterator<Item = IntVector> + '_ {
+        (0..self.height)
+            .flat_map(move |y| (0..self.width).map(move |x| IntVector::new(x as isize, y as isize)))
+    }
 }
 
 #[cfg(test)]

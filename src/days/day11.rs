@@ -20,107 +20,106 @@ impl Day for Day11 {
 
     fn part1(&self) -> Option<Result<String>> {
         Some(try_block(move || {
-            Ok(puzzle_input()?.expand().pair_distances().to_string())
+            Ok(puzzle_input()?.expand_once().pair_distances().to_string())
         }))
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            Ok(puzzle_input()?
+                .expand(1_000_000)
+                .pair_distances()
+                .to_string())
+        }))
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Image {
-    pixels: Box<[bool]>,
+    galaxies: Vec<IntVector>,
     shape: GridShape,
 }
 
 impl Image {
-    fn get(&self, coord: IntVector) -> bool {
-        self.pixels[self.shape.arr_index(coord)]
+    fn galaxy_at(&self, coord: IntVector) -> bool {
+        self.galaxies.contains(&coord)
     }
 
-    fn expand(&self) -> Image {
+    fn expand_once(&self) -> Image {
+        self.expand(2) // that is, every empty line becomes 2 empty lines
+    }
+
+    fn expand(&self, expansion_factor: usize) -> Image {
+        assert!(expansion_factor > 0);
+        let expand_to = expansion_factor - 1; // the number of new lines to add
         let rows: Box<[Box<[bool]>]> = (0..self.shape.height)
-            .map(|y| Box::from(&self.pixels[(y * self.shape.width)..((y + 1) * self.shape.width)]))
+            .map(|y| {
+                (0..self.shape.width)
+                    .map(|x| self.galaxy_at(IntVector::new(x as isize, y as isize)))
+                    .collect()
+            })
             .collect();
-        let mut num_new_rows = 0;
-        let new_rows: Box<[Box<[bool]>]> = rows
+        let expanded_row_indices: Vec<usize> = rows
             .into_iter()
-            .flat_map(|row| {
+            .enumerate()
+            .filter_map(|(y, row)| {
                 if row.iter().all(|pixel| !pixel) {
-                    num_new_rows += 1;
-                    vec![row.clone(), row.clone()]
+                    Some(y)
                 } else {
-                    vec![row.clone()]
+                    None
                 }
             })
             .collect();
-        let expanded = Image {
-            pixels: new_rows
-                .into_iter()
-                .flat_map(|row| row.into_iter())
-                .copied()
-                .collect::<Box<[_]>>(),
-            shape: GridShape {
-                width: self.shape.width,
-                height: self.shape.height + num_new_rows,
-            },
-        };
-        let columns: Box<[Box<[bool]>]> = (0..expanded.shape.width)
+        let columns: Box<[Box<[bool]>]> = (0..self.shape.width)
             .map(|x| {
-                expanded
-                    .pixels
-                    .iter()
-                    .skip(x)
-                    .step_by(expanded.shape.width)
-                    .copied()
-                    .collect::<Box<[bool]>>()
+                (0..self.shape.height)
+                    .map(|y| self.galaxy_at(IntVector::new(x as isize, y as isize)))
+                    .collect()
             })
             .collect();
-        let mut num_new_columns = 0;
-        let new_columns: Box<[Box<[bool]>]> = columns
+        let expanded_column_indices: Vec<usize> = columns
             .into_iter()
-            .flat_map(|column| {
+            .enumerate()
+            .filter_map(|(x, column)| {
                 if column.iter().all(|pixel| !pixel) {
-                    num_new_columns += 1;
-                    vec![column.clone(), column.clone()]
+                    Some(x)
                 } else {
-                    vec![column.clone()]
+                    None
                 }
             })
             .collect();
         let expanded = Image {
             shape: GridShape {
-                width: expanded.shape.width + num_new_columns,
-                height: expanded.shape.height,
+                width: self.shape.width + expanded_column_indices.len() * expand_to,
+                height: self.shape.height + expanded_row_indices.len() * expand_to,
             },
-            pixels: {
-                let mut pixels =
-                    Vec::<bool>::with_capacity(expanded.shape.width * expanded.shape.height);
-                for y in 0..expanded.shape.height {
-                    for x in 0..(expanded.shape.width + num_new_columns) {
-                        pixels.push(new_columns[x][y]);
-                    }
-                }
-                pixels.into_boxed_slice()
-            },
+            galaxies: self
+                .galaxies
+                .iter()
+                .map(|galaxy| {
+                    let rows_expanded_before = expanded_row_indices
+                        .iter()
+                        .filter(|row_index| galaxy.y >= **row_index as isize)
+                        .count();
+                    let columns_expanded_before = expanded_column_indices
+                        .iter()
+                        .filter(|column_index| galaxy.x >= **column_index as isize)
+                        .count();
+                    IntVector::new(
+                        galaxy.x + (columns_expanded_before * expand_to) as isize,
+                        galaxy.y + (rows_expanded_before * expand_to) as isize,
+                    )
+                })
+                .collect(),
         };
         expanded
     }
 
     fn galaxy_pairs(&self) -> Vec<(IntVector, IntVector)> {
-        let galaxies: Vec<IntVector> = self
-            .pixels
+        self.galaxies
             .iter()
-            .enumerate()
-            .filter(|(_, &pixel)| pixel)
-            .map(|(index, _)| self.shape.coordinate_for_index(index))
-            .collect();
-        galaxies
-            .into_iter()
             .combinations(2)
-            .map(|combo| (combo[0], combo[1]))
+            .map(|combo| (*combo[0], *combo[1]))
             .collect()
     }
 
@@ -147,7 +146,13 @@ impl FromStr for Image {
             })
             .collect::<Result<Vec<_>>>()?
             .into_boxed_slice();
-        Ok(Self { pixels, shape })
+        let galaxies = pixels
+            .iter()
+            .enumerate()
+            .filter(|(_, &pixel)| pixel)
+            .map(|(index, _)| shape.coordinate_for_index(index))
+            .collect::<Vec<_>>();
+        Ok(Self { galaxies, shape })
     }
 }
 
@@ -156,7 +161,13 @@ impl Display for Image {
         f.write_str(
             &self
                 .shape
-                .format_char_grid(self.pixels.iter().map(|&b| if b { '#' } else { '.' })),
+                .format_char_grid(self.shape.coord_iter().map(|coord| {
+                    if self.galaxy_at(coord) {
+                        '#'
+                    } else {
+                        '.'
+                    }
+                })),
         )
     }
 }
@@ -172,6 +183,15 @@ mod test {
             "9609130".to_string(),
         );
     }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!(
+            super::Day11.part2().unwrap().unwrap(),
+            "702152204842".to_string(),
+        );
+    }
+
 
     fn sample_input() -> Image {
         let input = indoc! {"
@@ -225,17 +245,54 @@ mod test {
             .........#...
             #....#.......
         "};
-        let result = input.expand();
+        let result = input.expand_once();
         assert_eq!(result.to_string(), expected);
     }
 
     #[test]
+    fn test_noop_expand() {
+        let input = sample_input();
+        let result = input.expand(1);
+        assert_eq!(result.to_string(), input.to_string());
+    }
+
+    #[test]
     fn test_galaxy_pairs() {
-        assert_eq!(sample_input().expand().galaxy_pairs().len(), 36);
+        assert_eq!(sample_input().expand_once().galaxy_pairs().len(), 36);
     }
 
     #[test]
     fn test_pair_distances() {
-        assert_eq!(sample_input().expand().pair_distances(), 374);
+        assert_eq!(sample_input().expand_once().pair_distances(), 374);
+    }
+
+    #[test]
+    fn test_triple_expansion() {
+        let input = sample_input();
+        let expected = indoc! {"
+            .....#..........
+            ...........#....
+            #...............
+            ................
+            ................
+            ................
+            ..........#.....
+            .#..............
+            ...............#
+            ................
+            ................
+            ................
+            ...........#....
+            #.....#.........
+        "};
+        let result = input.expand(3);
+        println!("{}", result.to_string());
+        assert_eq!(result.to_string(), expected);
+    }
+
+    #[test]
+    fn test_larger_expansion() {
+        assert_eq!(sample_input().expand(10).pair_distances(), 1030);
+        assert_eq!(sample_input().expand(100).pair_distances(), 8410);
     }
 }
