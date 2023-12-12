@@ -33,6 +33,19 @@ impl Day for Day12 {
         }))
     }
 
+    #[cfg(feature = "slow_solutions")]
+    fn part2(&self) -> Option<Result<String>> {
+        Some(try_block(move || {
+            puzzle_input()?
+                .into_par_iter()
+                .map(|record| record.unfold().possible_arrangements())
+                .sum::<usize>()
+                .to_string()
+                .pipe(Ok)
+        }))
+    }
+
+    #[cfg(not(feature = "slow_solutions"))]
     fn part2(&self) -> Option<Result<String>> {
         None
     }
@@ -41,16 +54,16 @@ impl Day for Day12 {
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Record {
     damage_sequence: Box<[Option<bool>]>,
-    contingous_damage_sequences: Box<[u32]>,
+    continguous_damage_sequences: Box<[u32]>,
 }
 
-fn damage_record_to_char(input: Option<bool>) -> char {
-    match input {
-        Some(true) => '#',
-        Some(false) => '.',
-        None => '?',
-    }
-}
+// fn damage_record_to_char(input: Option<bool>) -> char {
+//     match input {
+//         Some(true) => '#',
+//         Some(false) => '.',
+//         None => '?',
+//     }
+// }
 
 impl Record {
     fn possible_arrangements(&self) -> usize {
@@ -164,7 +177,24 @@ impl Record {
             }
         }
 
-        remaining_valid_arrangements(0, &self.damage_sequence, &self.contingous_damage_sequences)
+        remaining_valid_arrangements(0, &self.damage_sequence, &self.continguous_damage_sequences)
+    }
+
+    fn unfold(&self) -> Self {
+        let mut damage_sequence = Vec::with_capacity(self.damage_sequence.len() * 5 + 4);
+        for i in 0..5 {
+            if i > 0 {
+                damage_sequence.push(None);
+            }
+            damage_sequence.extend_from_slice(&self.damage_sequence);
+        }
+        Self {
+            damage_sequence: damage_sequence.into_boxed_slice(),
+            continguous_damage_sequences: self
+                .continguous_damage_sequences
+                .repeat(5)
+                .into_boxed_slice(),
+        }
     }
 }
 
@@ -199,7 +229,7 @@ impl FromStr for Record {
 
         Ok(Self {
             damage_sequence,
-            contingous_damage_sequences,
+            continguous_damage_sequences: contingous_damage_sequences,
         })
     }
 }
@@ -210,11 +240,15 @@ mod test {
 
     #[test]
     fn test_part1() {
-        assert_eq!(
-            super::Day12.part1().unwrap().unwrap(),
-            "Hello, world!".to_string(),
-        );
+        assert_eq!(super::Day12.part1().unwrap().unwrap(), "7771".to_string(),);
     }
+
+    #[cfg(feature = "slow_solutions")]
+    #[test]
+    fn test_part2() {
+        assert_eq!(super::Day12.part2().unwrap().unwrap(), "0".to_string(),);
+    }
+
 
     #[test]
     fn test_parsing() {
@@ -232,7 +266,7 @@ mod test {
                     Some(true)
                 ]
                 .into_boxed_slice(),
-                contingous_damage_sequences: vec![1, 1, 3].into_boxed_slice(),
+                continguous_damage_sequences: vec![1, 1, 3].into_boxed_slice(),
             }
         );
     }
@@ -274,6 +308,67 @@ mod test {
                 .unwrap()
                 .possible_arrangements(),
             10
+        );
+    }
+
+    #[test]
+    fn test_unfold() {
+        assert_eq!(
+            Record::from_str(".# 1").unwrap().unfold(),
+            Record::from_str(".#?.#?.#?.#?.# 1,1,1,1,1").unwrap()
+        );
+        assert_eq!(
+            Record::from_str("???.### 1,1,3").unwrap().unfold(),
+            Record::from_str(
+                "???.###????.###????.###????.###????.### 1,1,3,1,1,3,1,1,3,1,1,3,1,1,3"
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_unfolded_arrangements() {
+        assert_eq!(
+            Record::from_str("???.### 1,1,3")
+                .unwrap()
+                .unfold()
+                .possible_arrangements(),
+            1
+        );
+        assert_eq!(
+            Record::from_str(".??..??...?##. 1,1,3")
+                .unwrap()
+                .unfold()
+                .possible_arrangements(),
+            16384
+        );
+        assert_eq!(
+            Record::from_str("?#?#?#?#?#?#?#? 1,3,1,6")
+                .unwrap()
+                .unfold()
+                .possible_arrangements(),
+            1
+        );
+        assert_eq!(
+            Record::from_str("????.#...#... 4,1,1")
+                .unwrap()
+                .unfold()
+                .possible_arrangements(),
+            16
+        );
+        assert_eq!(
+            Record::from_str("????.######..#####. 1,6,5")
+                .unwrap()
+                .unfold()
+                .possible_arrangements(),
+            2500
+        );
+        assert_eq!(
+            Record::from_str("?###???????? 3,2,1")
+                .unwrap()
+                .unfold()
+                .possible_arrangements(),
+            506250
         );
     }
 }
