@@ -1,5 +1,6 @@
 // Day 12: Hot Springs
 
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use regex::Regex;
@@ -33,7 +34,6 @@ impl Day for Day12 {
         }))
     }
 
-    #[cfg(feature = "slow_solutions")]
     fn part2(&self) -> Option<Result<String>> {
         Some(try_block(move || {
             puzzle_input()?
@@ -43,11 +43,6 @@ impl Day for Day12 {
                 .to_string()
                 .pipe(Ok)
         }))
-    }
-
-    #[cfg(not(feature = "slow_solutions"))]
-    fn part2(&self) -> Option<Result<String>> {
-        None
     }
 }
 
@@ -72,6 +67,7 @@ impl Record {
             current_damage_sequence_length: usize,
             remaining_damage_sequence: &[Option<bool>],
             remaining_contiguous_damage_sequences: &[u32],
+            cache: &mut HashMap<QueryKey, usize>,
         ) -> usize {
             // println!(
             //     "{}{}->{} {}",
@@ -94,10 +90,11 @@ impl Record {
                         // this sequence is too long. invalid arrangement.
                         return 0;
                     } else {
-                        return remaining_valid_arrangements(
+                        return remaining_valid_arrangements_with_cache(
                             current_damage_sequence_length,
                             remaining_damage_sequence,
                             remaining_contiguous_damage_sequences,
+                            cache,
                         );
                     }
                 } else {
@@ -107,10 +104,11 @@ impl Record {
             } else {
                 if current_damage_sequence_length == 0 {
                     // just a contiguous undamaged sequence, keep moving
-                    return remaining_valid_arrangements(
+                    return remaining_valid_arrangements_with_cache(
                         current_damage_sequence_length,
                         remaining_damage_sequence,
                         remaining_contiguous_damage_sequences,
+                        cache,
                     );
                 }
                 let next_contiguous_damage_sequence = next_contiguous_damage_sequence.expect(
@@ -118,10 +116,11 @@ impl Record {
                 );
                 if current_damage_sequence_length == *next_contiguous_damage_sequence as usize {
                     // pop the next contiguous damage sequence
-                    return remaining_valid_arrangements(
+                    return remaining_valid_arrangements_with_cache(
                         0,
                         remaining_damage_sequence,
                         &remaining_contiguous_damage_sequences[1..],
+                        cache,
                     );
                 } else {
                     // wrong sequence length. invalid arrangement
@@ -134,6 +133,7 @@ impl Record {
             current_damage_sequence_length: usize,
             remaining_damage_sequence: &[Option<bool>],
             remaining_contiguous_damage_sequences: &[u32],
+            cache: &mut HashMap<QueryKey, usize>,
         ) -> usize {
             if remaining_damage_sequence.is_empty() {
                 if remaining_contiguous_damage_sequences.is_empty() {
@@ -160,6 +160,7 @@ impl Record {
                     current_damage_sequence_length,
                     remaining_damage_sequence,
                     remaining_contiguous_damage_sequences,
+                    cache,
                 );
             } else {
                 // unknown; try both
@@ -168,16 +169,55 @@ impl Record {
                     current_damage_sequence_length,
                     remaining_damage_sequence,
                     remaining_contiguous_damage_sequences,
+                    cache,
                 ) + resolve_next(
                     false,
                     current_damage_sequence_length,
                     remaining_damage_sequence,
                     remaining_contiguous_damage_sequences,
+                    cache,
                 );
             }
         }
 
-        remaining_valid_arrangements(0, &self.damage_sequence, &self.continguous_damage_sequences)
+        #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+        struct QueryKey {
+            current_damage_sequence_length: usize,
+            remaining_damage_sequence: Box<[Option<bool>]>,
+            remaining_contiguous_damage_sequences: Box<[u32]>,
+        }
+        let mut cache: HashMap<QueryKey, usize> = HashMap::new();
+
+        fn remaining_valid_arrangements_with_cache(
+            current_damage_sequence_length: usize,
+            remaining_damage_sequence: &[Option<bool>],
+            remaining_contiguous_damage_sequences: &[u32],
+            cache: &mut HashMap<QueryKey, usize>,
+        ) -> usize {
+            let query_key = QueryKey {
+                current_damage_sequence_length,
+                remaining_damage_sequence: remaining_damage_sequence.into(),
+                remaining_contiguous_damage_sequences: remaining_contiguous_damage_sequences.into(),
+            };
+            if let Some(result) = cache.get(&query_key) {
+                return *result;
+            }
+            let result = remaining_valid_arrangements(
+                current_damage_sequence_length,
+                remaining_damage_sequence,
+                remaining_contiguous_damage_sequences,
+                cache,
+            );
+            cache.insert(query_key, result);
+            return result;
+        }
+
+        remaining_valid_arrangements(
+            0,
+            &self.damage_sequence,
+            &self.continguous_damage_sequences,
+            &mut cache,
+        )
     }
 
     fn unfold(&self) -> Self {
@@ -243,12 +283,10 @@ mod test {
         assert_eq!(super::Day12.part1().unwrap().unwrap(), "7771".to_string(),);
     }
 
-    #[cfg(feature = "slow_solutions")]
     #[test]
     fn test_part2() {
-        assert_eq!(super::Day12.part2().unwrap().unwrap(), "0".to_string(),);
+        assert_eq!(super::Day12.part2().unwrap().unwrap(), "10861030975833".to_string(),);
     }
-
 
     #[test]
     fn test_parsing() {
