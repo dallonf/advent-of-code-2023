@@ -7,6 +7,11 @@ pub struct IntVector {
     pub y: isize,
 }
 
+pub const NORTH: IntVector = IntVector::new(0, -1);
+pub const SOUTH: IntVector = IntVector::new(0, 1);
+pub const EAST: IntVector = IntVector::new(1, 0);
+pub const WEST: IntVector = IntVector::new(-1, 0);
+
 impl IntVector {
     pub const fn new(x: isize, y: isize) -> Self {
         Self { x, y }

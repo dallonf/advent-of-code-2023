@@ -2,11 +2,11 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Display;
-use std::ops::{Add, AddAssign};
 use std::str::FromStr;
 
 use tap::Pipe;
 
+use crate::framework::grid::{GridShape, IntVector, EAST, NORTH, SOUTH, WEST};
 use crate::framework::Day;
 use crate::prelude::*;
 
@@ -93,89 +93,33 @@ impl MetalPipe {
     }
 }
 
-type Units = i32;
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-struct IntVector {
-    x: Units,
-    y: Units,
-}
-
-const NORTH: IntVector = IntVector::new(0, -1);
-const SOUTH: IntVector = IntVector::new(0, 1);
-const EAST: IntVector = IntVector::new(1, 0);
-const WEST: IntVector = IntVector::new(-1, 0);
-
-impl IntVector {
-    const fn new(x: Units, y: Units) -> Self {
-        Self { x, y }
-    }
-
-    fn cardinal_neighbors(self) -> Vec<Self> {
-        vec![
-            IntVector::new(self.x - 1, self.y),
-            IntVector::new(self.x + 1, self.y),
-            IntVector::new(self.x, self.y - 1),
-            IntVector::new(self.x, self.y + 1),
-        ]
-    }
-
-    fn inverse(&self) -> IntVector {
-        IntVector::new(-self.x, -self.y)
-    }
-}
-
-impl Add for IntVector {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-        }
-    }
-}
-
-impl AddAssign for IntVector {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = *self + rhs;
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Grid {
-    width: usize,
+    shape: GridShape,
     tiles: Vec<Option<MetalPipe>>,
 }
 
 impl Grid {
     fn get(&self, coord: IntVector) -> Option<MetalPipe> {
-        let index = self.index(coord);
+        if !self.in_bounds(coord) {
+            return None;
+        }
+        let index = self.shape.arr_index(coord);
         self.tiles.get(index).copied().flatten()
-    }
-
-    fn index(&self, coord: IntVector) -> usize {
-        (coord.y * self.width as Units + coord.x) as usize
     }
 
     fn in_bounds(&self, coord: IntVector) -> bool {
         coord.x >= 0
-            && coord.x < self.width as Units
+            && coord.x < self.shape.width as isize
             && coord.y >= 0
-            && coord.y < self.tiles.len() as Units / self.width as Units
-    }
-
-    fn coordinate_for_index(&self, index: usize) -> IntVector {
-        let x = index % self.width;
-        let y = index / self.width;
-        IntVector::new(x as Units, y as Units)
+            && coord.y < self.shape.height as isize
     }
 
     fn find_start_coordinate(&self) -> Option<IntVector> {
         self.tiles
             .iter()
             .position(|tile| tile == &Some(MetalPipe::Start))
-            .map(|index| self.coordinate_for_index(index))
+            .map(|index| self.shape.coordinate_for_index(index))
     }
 
     fn find_kind_of_start(&self) -> Result<MetalPipe> {
@@ -462,37 +406,18 @@ impl FromStr for Grid {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let lines = s.lines().collect::<Vec<_>>();
-        let width = lines.first().ok_or(anyhow!("empty grid"))?.chars().count();
-        let chars: Vec<char> = lines
-            .iter()
-            .map(|line| {
-                let chars = line.chars().collect::<Vec<char>>();
-                if chars.len() != width {
-                    return Err(anyhow!(
-                        "inconsistent line width - expected {}, got {} ({})",
-                        width,
-                        chars.len(),
-                        line
-                    ));
-                }
-                Ok(chars)
-            })
-            .collect::<Result<Vec<Vec<char>>>>()?
-            .into_iter()
-            .flatten()
-            .collect();
+        let (shape, chars) = GridShape::parse_char_grid(s)?;
         let tiles: Vec<Option<MetalPipe>> = chars
             .into_iter()
-            .map(|c| MetalPipe::from_char(c))
+            .map(|c| MetalPipe::from_char(*c))
             .collect::<Result<_>>()?;
-        Ok(Grid { tiles, width })
+        Ok(Grid { tiles, shape })
     }
 }
 
 impl Display for Grid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for row in self.tiles.chunks(self.width) {
+        for row in self.tiles.chunks(self.shape.width) {
             for tile in row {
                 match tile {
                     Some(pipe) => write!(f, "{}", pipe.to_char())?,

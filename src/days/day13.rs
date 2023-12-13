@@ -60,7 +60,7 @@ impl Pattern {
         &self.rocks[left_coord..right_coord]
     }
     fn column(&self, x: usize) -> Box<[bool]> {
-        // TODO: memoize
+        // This could be memoized for a lil performance boost, but it didn't seem necessary
         (0..(self.shape.height))
             .map(|y| self.rocks[self.shape.arr_index(IntVector::new(x as isize, y as isize))])
             .collect()
