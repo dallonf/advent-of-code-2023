@@ -34,7 +34,14 @@ impl Day for Day13 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            puzzle_input()?
+                .iter()
+                .map(|pattern| pattern.reflection_score_with_smudge())
+                .sum::<usize>()
+                .to_string()
+                .pipe(Ok)
+        }))
     }
 }
 
@@ -60,6 +67,10 @@ impl Pattern {
     }
 
     fn vertical_reflection(&self) -> Option<usize> {
+        self.vertical_reflection_expecting_errors(0)
+    }
+
+    fn vertical_reflection_expecting_errors(&self, expected_errors: usize) -> Option<usize> {
         for x in 1..self.shape.width {
             let reflection_size = usize::min(x, self.shape.width - x);
             let left_columns: Box<[Box<[bool]>]> = (x - reflection_size..x)
@@ -70,7 +81,14 @@ impl Pattern {
                 .map(|column_x| self.column(column_x))
                 .collect();
 
-            if left_columns == right_columns {
+            let errors = left_columns
+                .iter()
+                .flat_map(|column| column.iter())
+                .zip(right_columns.iter().flat_map(|column| column.iter()))
+                .filter(|(a, b)| a != b)
+                .count();
+
+            if errors == expected_errors {
                 return Some(x);
             }
         }
@@ -78,6 +96,10 @@ impl Pattern {
     }
 
     fn horizontal_reflection(&self) -> Option<usize> {
+        self.horizontal_reflection_expecting_errors(0)
+    }
+
+    fn horizontal_reflection_expecting_errors(&self, expected_errors: usize) -> Option<usize> {
         for y in 1..self.shape.height {
             let reflection_size = usize::min(y, self.shape.height - y);
             let top_rows: Box<[&[bool]]> = (y - reflection_size..y)
@@ -88,7 +110,14 @@ impl Pattern {
                 .map(|row_y| self.row(row_y))
                 .collect();
 
-            if top_rows == bottom_rows {
+            let errors = top_rows
+                .iter()
+                .flat_map(|row| row.iter())
+                .zip(bottom_rows.iter().flat_map(|row| row.iter()))
+                .filter(|(a, b)| a != b)
+                .count();
+
+            if errors == expected_errors {
                 return Some(y);
             }
         }
@@ -100,6 +129,16 @@ impl Pattern {
             return vertical;
         }
         if let Some(horizontal) = self.horizontal_reflection() {
+            return horizontal * 100;
+        }
+        return 0;
+    }
+
+    fn reflection_score_with_smudge(&self) -> usize {
+        if let Some(vertical) = self.vertical_reflection_expecting_errors(1) {
+            return vertical;
+        }
+        if let Some(horizontal) = self.horizontal_reflection_expecting_errors(1) {
             return horizontal * 100;
         }
         return 0;
@@ -145,6 +184,11 @@ mod test {
         assert_eq!(super::Day13.part1().unwrap().unwrap(), "28895".to_string());
     }
 
+    #[test]
+    fn test_part2() {
+        assert_eq!(super::Day13.part2().unwrap().unwrap(), "31603".to_string());
+    }
+
     fn sample_with_vertical() -> Pattern {
         Pattern::from_str(indoc! {"
             #.##..##.
@@ -153,6 +197,7 @@ mod test {
             ##......#
             ..#.##.#.
             ..##..##.
+            #.#.##.#.
         "})
         .unwrap()
     }
@@ -188,5 +233,11 @@ mod test {
     fn test_reflection_score() {
         assert_eq!(sample_with_vertical().reflection_score(), 5);
         assert_eq!(sample_with_horizontal().reflection_score(), 400);
+    }
+
+    #[test]
+    fn test_smudges() {
+        assert_eq!(sample_with_vertical().reflection_score_with_smudge(), 300);
+        // assert_eq!(sample_with_horizontal().reflection_score_with_smudge(), 100);
     }
 }
