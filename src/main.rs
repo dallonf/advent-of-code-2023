@@ -47,20 +47,20 @@ fn main() {
         if let Some(output) = day.part1() {
             let day1_elapsed = day1_start.elapsed();
             println!(
-                "Day {}, part 1: {} ({})",
+                "Day {}, part 1 ({}): {}",
                 day.day_number(),
+                format_duration(&day1_elapsed),
                 output.unwrap_or_else(|err| err.to_string()),
-                format_duration(&day1_elapsed)
             );
         }
         let day2_start = Instant::now();
         if let Some(output) = day.part2() {
             let day2_elapsed = day2_start.elapsed();
             println!(
-                "Day {}, part 2: {} ({})",
+                "Day {}, part 2 ({}): {}",
                 day.day_number(),
+                format_duration(&day2_elapsed),
                 output.unwrap_or_else(|err| err.to_string()),
-                format_duration(&day2_elapsed)
             );
         }
     }
