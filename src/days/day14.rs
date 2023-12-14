@@ -1,9 +1,12 @@
 // Day 14: Parabolic Reflector Dish
 
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::fmt::Display;
+use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
-use crate::framework::grid::{GridShape, IntVector, NORTH};
+use crate::framework::grid::{GridShape, IntVector, EAST, NORTH, SOUTH, WEST};
 use crate::framework::Day;
 use crate::prelude::*;
 
@@ -27,7 +30,11 @@ impl Day for Day14 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            let mut platform = puzzle_input()?;
+            platform.spin_cycle_repeat(1_000_000_000)?;
+            Ok(platform.total_load().to_string())
+        }))
     }
 }
 
@@ -75,7 +82,7 @@ impl Platform {
         self.rocks[index]
     }
 
-    fn slide_north(&mut self) -> Result<()> {
+    fn slide(&mut self, direction: IntVector) -> Result<()> {
         let rocks_to_slide = self
             .rocks
             .iter()
@@ -86,9 +93,9 @@ impl Platform {
             })
             .filter_map(|i| {
                 let coord = self.shape.coordinate_for_index(i);
-                let north = coord + NORTH;
-                if self.shape.in_bounds(north) && self.get(north) == None {
-                    Some((coord, north))
+                let target = coord + direction;
+                if self.shape.in_bounds(target) && self.get(target) == None {
+                    Some((coord, target))
                 } else {
                     None
                 }
@@ -102,9 +109,13 @@ impl Platform {
     }
 
     fn slide_north_fully(&mut self) -> Result<()> {
+        self.slide_fully(NORTH)
+    }
+
+    fn slide_fully(&mut self, direction: IntVector) -> Result<()> {
         let mut previous = self.clone();
         loop {
-            self.slide_north()?;
+            self.slide(direction)?;
             if *self == previous {
                 break;
             }
@@ -127,6 +138,41 @@ impl Platform {
                 }
             })
             .sum()
+    }
+
+    fn spin_cycle(&mut self) -> Result<()> {
+        self.slide_fully(NORTH)?;
+        self.slide_fully(WEST)?;
+        self.slide_fully(SOUTH)?;
+        self.slide_fully(EAST)?;
+        Ok(())
+    }
+
+    fn spin_cycle_repeat(&mut self, times: usize) -> Result<()> {
+        let mut sequence_so_far = Vec::<Box<[Option<Rock>]>>::new();
+        let mut seen_states = HashMap::<u64, usize>::new();
+        let mut sequence: Option<(usize, usize)> = None;
+        for i in 0..times {
+            let state_hash = {
+                let mut hasher = DefaultHasher::new();
+                self.rocks.hash(&mut hasher);
+                hasher.finish()
+            };
+            if let Some(seen_state) = seen_states.get(&state_hash) {
+                sequence = Some((*seen_state, i));
+                break;
+            }
+            seen_states.insert(state_hash, i);
+            sequence_so_far.push(self.rocks.clone());
+            self.spin_cycle()?;
+        }
+        if let Some((sequence_start, sequence_end)) = sequence {
+            let looping_sequence = &sequence_so_far[sequence_start..sequence_end];
+            let cycles_left = times - sequence_end;
+            let final_state = &looping_sequence[cycles_left % looping_sequence.len()];
+            self.rocks = final_state.clone();
+        }
+        Ok(())
     }
 }
 
@@ -158,7 +204,12 @@ mod test {
 
     #[test]
     fn test_part1() {
-        assert_eq!(super::Day14.part1().unwrap().unwrap(), "107430".to_string(),);
+        assert_eq!(super::Day14.part1().unwrap().unwrap(), "107430".to_string());
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!(super::Day14.part2().unwrap().unwrap(), "96317".to_string());
     }
 
     fn sample_input() -> Platform {
@@ -202,5 +253,31 @@ mod test {
         let mut platform = sample_input();
         platform.slide_north_fully().unwrap();
         assert_eq!(platform.total_load(), 136);
+    }
+
+    #[test]
+    fn test_spin_cycle() {
+        let mut platform = sample_input();
+        platform.spin_cycle().unwrap();
+        let expected = indoc! {"
+            .....#....
+            ....#...O#
+            ...OO##...
+            .OO#......
+            .....OOO#.
+            .O#...O#.#
+            ....O#....
+            ......OOOO
+            #...O###..
+            #..OO#....
+        "};
+        assert_eq!(platform.to_string(), expected);
+    }
+
+    #[test]
+    fn test_spin_cycle_repeat() {
+        let mut platform = sample_input();
+        platform.spin_cycle_repeat(1_000_000_000).unwrap();
+        assert_eq!(platform.total_load(), 64);
     }
 }
