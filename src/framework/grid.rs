@@ -114,6 +114,13 @@ impl GridShape {
         (0..self.height)
             .flat_map(move |y| (0..self.width).map(move |x| IntVector::new(x as isize, y as isize)))
     }
+
+    pub fn in_bounds(&self, coord: IntVector) -> bool {
+        coord.x >= 0
+            && coord.y >= 0
+            && coord.x < (self.width as isize)
+            && coord.y < (self.height as isize)
+    }
 }
 
 #[cfg(test)]
