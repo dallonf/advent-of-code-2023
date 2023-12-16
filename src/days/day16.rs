@@ -20,13 +20,27 @@ impl Day for Day16 {
 
     fn part1(&self) -> Option<Result<String>> {
         Some(try_block(move || {
-            puzzle_input()?.energized_tiles().to_string().pipe(Ok)
+            puzzle_input()?
+                .energized_tiles_top_left()
+                .to_string()
+                .pipe(Ok)
         }))
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            puzzle_input()?
+                .max_energized_tiles()
+                .to_string()
+                .pipe(Ok)
+        }))
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Beam {
+    position: IntVector,
+    direction: Direction,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,21 +61,20 @@ struct Contraption {
     shape: GridShape,
     tiles: Box<[Tile]>,
 }
+
 impl Contraption {
-    fn energized_tiles(&self) -> usize {
+    fn energized_tiles_top_left(&self) -> usize {
+        self.energized_tiles(Beam {
+            direction: Direction::East,
+            position: IntVector::new(0, 0),
+        })
+    }
+
+    fn energized_tiles(&self, starting_beam: Beam) -> usize {
         let mut energized_tiles =
             Box::<[HashSet<Direction>]>::from(vec![HashSet::new(); self.tiles.len()]);
 
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        struct Beam {
-            position: IntVector,
-            direction: Direction,
-        }
-
-        let mut current_beams: Vec<Beam> = vec![Beam {
-            position: IntVector::new(0, 0),
-            direction: Direction::East,
-        }];
+        let mut current_beams: Vec<Beam> = vec![starting_beam];
 
         while !current_beams.is_empty() {
             let mut next_beams: Vec<Beam> = vec![];
@@ -143,6 +156,36 @@ impl Contraption {
             .filter(|directions| !directions.is_empty())
             .count()
     }
+
+    fn max_energized_tiles(&self) -> usize {
+        let north_beams = (0..self.shape.width).map(|x| Beam {
+            position: IntVector::new(x as isize, 0),
+            direction: Direction::South,
+        });
+        let south_beams = (0..self.shape.width).map(|x| Beam {
+            position: IntVector::new(x as isize, self.shape.height as isize - 1),
+            direction: Direction::North,
+        });
+        let east_beams = (0..self.shape.height).map(|y| Beam {
+            position: IntVector::new(self.shape.width as isize - 1, y as isize),
+            direction: Direction::West,
+        });
+        let west_beams = (0..self.shape.height).map(|y| Beam {
+            position: IntVector::new(0, y as isize),
+            direction: Direction::East,
+        });
+        let all_beams = north_beams
+            .chain(south_beams)
+            .chain(east_beams)
+            .chain(west_beams)
+            .collect_vec();
+
+        all_beams
+            .par_iter()
+            .map(|&beam| self.energized_tiles(beam))
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 impl FromStr for Contraption {
@@ -175,6 +218,11 @@ mod test {
         assert_eq!(super::Day16.part1().unwrap().unwrap(), "7728".to_string(),);
     }
 
+    #[test]
+    fn test_part2() {
+        assert_eq!(super::Day16.part2().unwrap().unwrap(), "8061".to_string(),);
+    }
+
     fn sample_input() -> Contraption {
         let input = indoc! {r"
             .|...\....
@@ -194,7 +242,14 @@ mod test {
     #[test]
     fn test_energized_tiles() {
         let contraption = sample_input();
-        let result = contraption.energized_tiles();
+        let result = contraption.energized_tiles_top_left();
         assert_eq!(result, 46);
+    }
+
+    #[test]
+    fn test_max_energized_tiles() {
+        let contraption = sample_input();
+        let result = contraption.max_energized_tiles();
+        assert_eq!(result, 51);
     }
 }
