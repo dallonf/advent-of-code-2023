@@ -2,6 +2,39 @@ use crate::framework::prelude::*;
 use std::ops::{Add, AddAssign};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum Direction {
+    North,
+    South,
+    East,
+    West,
+}
+
+impl From<Direction> for IntVector {
+    fn from(direction: Direction) -> Self {
+        match direction {
+            Direction::North => NORTH,
+            Direction::South => SOUTH,
+            Direction::East => EAST,
+            Direction::West => WEST,
+        }
+    }
+}
+
+impl TryFrom<IntVector> for Direction {
+    type Error = anyhow::Error;
+
+    fn try_from(vector: IntVector) -> Result<Self> {
+        match vector {
+            NORTH => Ok(Direction::North),
+            SOUTH => Ok(Direction::South),
+            EAST => Ok(Direction::East),
+            WEST => Ok(Direction::West),
+            _ => Err(anyhow!("invalid direction vector: {:?}", vector)),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct IntVector {
     pub x: isize,
     pub y: isize,
