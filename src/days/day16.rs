@@ -29,10 +29,7 @@ impl Day for Day16 {
 
     fn part2(&self) -> Option<Result<String>> {
         Some(try_block(move || {
-            puzzle_input()?
-                .max_energized_tiles()
-                .to_string()
-                .pipe(Ok)
+            puzzle_input()?.max_energized_tiles().to_string().pipe(Ok)
         }))
     }
 }
@@ -71,8 +68,7 @@ impl Contraption {
     }
 
     fn energized_tiles(&self, starting_beam: Beam) -> usize {
-        let mut energized_tiles =
-            Box::<[HashSet<Direction>]>::from(vec![HashSet::new(); self.tiles.len()]);
+        let mut energized_tiles_direction_bitmask = Box::<[u8]>::from(vec![0; self.tiles.len()]);
 
         let mut current_beams: Vec<Beam> = vec![starting_beam];
 
@@ -83,10 +79,11 @@ impl Contraption {
                     continue;
                 }
                 let tile_index = self.shape.arr_index(beam.position);
-                if energized_tiles[tile_index].contains(&beam.direction) {
+                if energized_tiles_direction_bitmask[tile_index] & beam.direction as u8 != 0 {
+                    // Already energized from this direction.
                     continue;
                 }
-                energized_tiles[tile_index].insert(beam.direction);
+                energized_tiles_direction_bitmask[tile_index] |= beam.direction as u8;
 
                 let current_tile = self.tiles[tile_index];
                 match current_tile {
@@ -151,9 +148,9 @@ impl Contraption {
             current_beams = next_beams;
         }
 
-        energized_tiles
+        energized_tiles_direction_bitmask
             .iter()
-            .filter(|directions| !directions.is_empty())
+            .filter(|&&directions| directions != 0)
             .count()
     }
 

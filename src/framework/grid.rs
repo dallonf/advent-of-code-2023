@@ -1,12 +1,13 @@
 use crate::framework::prelude::*;
 use std::ops::{Add, AddAssign};
 
+/// Value can be used as a u8 bitmask
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum Direction {
-    North,
-    South,
-    East,
-    West,
+    North = 0b0001,
+    South = 0b0010,
+    East = 0b0100,
+    West = 0b1000,
 }
 
 impl From<Direction> for IntVector {
