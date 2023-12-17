@@ -1,7 +1,7 @@
 // Day 17: Clumsy Crucible
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap};
 use std::str::FromStr;
 
 use crate::framework::grid::{Direction, GridShape, IntVector};
@@ -237,8 +237,6 @@ impl CityMap {
 
         let mut distance_queue = BinaryHeap::<NodeDistance>::new();
         let mut paths = HashMap::<PathfindingNode, Vec<PathfindingNode>>::new();
-        // let mut distances = HashMap::<PathfindingNode, u64>::new();
-        // let mut visited_nodes = HashSet::<PathfindingNode>::new();
 
         let start_node_e = PathfindingNode {
             position: IntVector::new(0, 0),
@@ -252,11 +250,9 @@ impl CityMap {
         };
 
         distance_queue.push(NodeDistance(0, start_node_e));
-        // distances.insert(start_node_e, 0);
         node_map.set_distance(start_node_e, 0);
         paths.insert(start_node_e, vec![start_node_e]);
         distance_queue.push(NodeDistance(0, start_node_s));
-        // distances.insert(start_node_s, 0);
         node_map.set_distance(start_node_s, 0);
         paths.insert(start_node_s, vec![start_node_s]);
 
@@ -278,7 +274,6 @@ impl CityMap {
 
         while let Some((node, current_distance)) = best_node(&mut distance_queue, &node_map) {
             node_map.mark_visited(node);
-            // visited_nodes.insert(node);
             if node.position == destination_position {
                 break;
             }
