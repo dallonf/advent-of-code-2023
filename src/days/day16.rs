@@ -1,6 +1,5 @@
 // Day 16: The Floor Will Be Lava
 
-use std::collections::HashSet;
 use std::str::FromStr;
 
 use crate::framework::grid::{Direction, GridShape, IntVector};
