@@ -33,7 +33,17 @@ impl Day for Day17 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        // if cfg!(feature = "slow_solutions") {
+        Some(try_block(move || {
+            puzzle_input()
+                .find_minimal_heat_loss(UltraCrucible)
+                .ok_or(anyhow!("No path found"))?
+                .to_string()
+                .pipe(Ok)
+        }))
+        // } else {
+        //     None
+        // }
     }
 }
 
@@ -45,13 +55,17 @@ struct PathfindingNode {
 }
 
 trait Crucible {
-    fn valid_moves(&self, from_node: PathfindingNode) -> Vec<PathfindingNode>;
+    fn valid_moves(
+        &self,
+        from_node: PathfindingNode,
+        destination_position: IntVector,
+    ) -> Vec<PathfindingNode>;
 }
 
 struct SimpleCrucible;
 
 impl Crucible for SimpleCrucible {
-    fn valid_moves(&self, from_node: PathfindingNode) -> Vec<PathfindingNode> {
+    fn valid_moves(&self, from_node: PathfindingNode, _: IntVector) -> Vec<PathfindingNode> {
         from_node
             .position
             .cardinal_neighbors_with_directions()
@@ -68,6 +82,49 @@ impl Crucible for SimpleCrucible {
                 } else {
                     1
                 };
+                let node = PathfindingNode {
+                    position: neighbor_position,
+                    direction,
+                    length_of_straight_line: new_length_of_straight_line,
+                };
+                Some(node)
+            })
+            .collect()
+    }
+}
+
+struct UltraCrucible;
+
+impl Crucible for UltraCrucible {
+    fn valid_moves(
+        &self,
+        from_node: PathfindingNode,
+        destination_position: IntVector,
+    ) -> Vec<PathfindingNode> {
+        from_node
+            .position
+            .cardinal_neighbors_with_directions()
+            .into_iter()
+            .filter_map(|(neighbor_position, direction)| {
+                if direction == from_node.direction.opposite() {
+                    return None;
+                }
+                if from_node.length_of_straight_line < 4 && (direction != from_node.direction) {
+                    // We can't turn yet.
+                    return None;
+                }
+                if from_node.length_of_straight_line >= 10 && direction == from_node.direction {
+                    return None;
+                }
+                let new_length_of_straight_line = if direction == from_node.direction {
+                    from_node.length_of_straight_line + 1
+                } else {
+                    1
+                };
+                if new_length_of_straight_line < 4 && (neighbor_position == destination_position) {
+                    // We can't stop yet.
+                    return None;
+                }
                 let node = PathfindingNode {
                     position: neighbor_position,
                     direction,
@@ -153,7 +210,7 @@ impl CityMap {
             }
 
             let neighboring_nodes_and_immediate_heat_loss = crucible
-                .valid_moves(node)
+                .valid_moves(node, destination_position)
                 .into_iter()
                 .filter_map(|to_node| {
                     let heat_loss = self.heat_loss_for_block(to_node.position)?;
@@ -270,5 +327,27 @@ mod test {
             sample_input().find_minimal_heat_loss(SimpleCrucible),
             Some(102)
         );
+    }
+
+    #[test]
+    fn test_ultra_crucible() {
+        assert_eq!(
+            sample_input().find_minimal_heat_loss(UltraCrucible),
+            Some(94)
+        );
+    }
+
+    #[test]
+    fn test_ultra_crucible_unfortunate() {
+        let city_map: CityMap = indoc! {"
+            111111111111
+            999999999991
+            999999999991
+            999999999991
+            999999999991
+        "}
+        .parse()
+        .unwrap();
+        assert_eq!(city_map.find_minimal_heat_loss(UltraCrucible), Some(71));
     }
 }
