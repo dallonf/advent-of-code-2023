@@ -165,10 +165,80 @@ impl CityMap {
             }
         }
 
-        let mut distances = HashMap::<PathfindingNode, u64>::new();
+        struct NodeMapEntry {
+            direction: Direction,
+            length_of_straight_line: u8,
+            distance: u64,
+            visited: bool,
+        }
+        struct NodeMap {
+            shape: GridShape,
+            nodes: Vec<Vec<NodeMapEntry>>,
+        }
+
+        impl NodeMap {
+            fn set_distance(&mut self, node: PathfindingNode, distance: u64) {
+                let entries = &mut self.nodes[self.shape.arr_index(node.position)];
+                let entry = entries.iter_mut().find(|entry| {
+                    entry.direction == node.direction
+                        && entry.length_of_straight_line == node.length_of_straight_line
+                });
+
+                if let Some(entry) = entry {
+                    entry.distance = distance;
+                } else {
+                    entries.push(NodeMapEntry {
+                        direction: node.direction,
+                        length_of_straight_line: node.length_of_straight_line,
+                        distance: distance,
+                        visited: false,
+                    });
+                }
+            }
+
+            fn get_distance_mut(&mut self, node: PathfindingNode) -> Option<&mut u64> {
+                let entries = &mut self.nodes[self.shape.arr_index(node.position)];
+                let entry = entries.iter_mut().find(|entry| {
+                    entry.direction == node.direction
+                        && entry.length_of_straight_line == node.length_of_straight_line
+                })?;
+                Some(&mut entry.distance)
+            }
+
+            fn mark_visited(&mut self, node: PathfindingNode) {
+                let entries = &mut self.nodes[self.shape.arr_index(node.position)];
+                let entry = entries
+                    .iter_mut()
+                    .find(|entry| {
+                        entry.direction == node.direction
+                            && entry.length_of_straight_line == node.length_of_straight_line
+                    })
+                    .expect("Somehow we're marking a node as visited without knowing its distance");
+                entry.visited = true;
+            }
+
+            fn is_visited(&self, node: PathfindingNode) -> bool {
+                let entries = &self.nodes[self.shape.arr_index(node.position)];
+                entries
+                    .iter()
+                    .find(|entry| {
+                        entry.direction == node.direction
+                            && entry.length_of_straight_line == node.length_of_straight_line
+                    })
+                    .map(|entry| entry.visited)
+                    .unwrap_or(false)
+            }
+        }
+
+        let mut node_map: NodeMap = NodeMap {
+            shape: self.shape.clone(),
+            nodes: self.shape.coord_iter().map(|_| vec![]).collect(),
+        };
+
         let mut distance_queue = BinaryHeap::<NodeDistance>::new();
         let mut paths = HashMap::<PathfindingNode, Vec<PathfindingNode>>::new();
-        let mut visited_nodes = HashSet::<PathfindingNode>::new();
+        // let mut distances = HashMap::<PathfindingNode, u64>::new();
+        // let mut visited_nodes = HashSet::<PathfindingNode>::new();
 
         let start_node_e = PathfindingNode {
             position: IntVector::new(0, 0),
@@ -182,21 +252,22 @@ impl CityMap {
         };
 
         distance_queue.push(NodeDistance(0, start_node_e));
-        distances.insert(start_node_e, 0);
+        // distances.insert(start_node_e, 0);
+        node_map.set_distance(start_node_e, 0);
         paths.insert(start_node_e, vec![start_node_e]);
         distance_queue.push(NodeDistance(0, start_node_s));
-        distances.insert(start_node_s, 0);
+        // distances.insert(start_node_s, 0);
+        node_map.set_distance(start_node_s, 0);
         paths.insert(start_node_s, vec![start_node_s]);
 
         fn best_node(
             distance_queue: &mut BinaryHeap<NodeDistance>,
-            visited_nodes: &HashSet<PathfindingNode>,
-            _paths: &HashMap<PathfindingNode, Vec<PathfindingNode>>,
+            node_map: &NodeMap,
         ) -> Option<(PathfindingNode, u64)> {
             let result = {
                 loop {
                     let node_distance = distance_queue.pop()?;
-                    if !visited_nodes.contains(&node_distance.1) {
+                    if !node_map.is_visited(node_distance.1) {
                         break node_distance;
                     }
                 }
@@ -205,10 +276,9 @@ impl CityMap {
             Some((result.1, result.0))
         }
 
-        while let Some((node, current_distance)) =
-            best_node(&mut distance_queue, &visited_nodes, &paths)
-        {
-            visited_nodes.insert(node);
+        while let Some((node, current_distance)) = best_node(&mut distance_queue, &node_map) {
+            node_map.mark_visited(node);
+            // visited_nodes.insert(node);
             if node.position == destination_position {
                 break;
             }
@@ -220,7 +290,8 @@ impl CityMap {
                     let heat_loss = self.heat_loss_for_block(to_node.position)?;
                     Some((to_node, heat_loss))
                 })
-                .filter(|(node, _)| !visited_nodes.contains(node));
+                .filter(|(node, _)| !node_map.is_visited(*node))
+                .collect_vec();
 
             for (neighboring_node, immediate_heat_loss) in neighboring_nodes_and_immediate_heat_loss
             {
@@ -232,7 +303,7 @@ impl CityMap {
                 } else {
                     None
                 };
-                if let Some(existing_distance) = distances.get_mut(&neighboring_node) {
+                if let Some(existing_distance) = node_map.get_distance_mut(neighboring_node) {
                     if distance < *existing_distance {
                         *existing_distance = distance;
                         if cfg!(feature = "visualizations") {
@@ -241,7 +312,7 @@ impl CityMap {
                         distance_queue.push(NodeDistance(distance, neighboring_node));
                     }
                 } else {
-                    distances.insert(neighboring_node, distance);
+                    node_map.set_distance(neighboring_node, distance);
                     if cfg!(feature = "visualizations") {
                         paths.insert(neighboring_node, new_path.unwrap());
                     }
@@ -250,13 +321,21 @@ impl CityMap {
             }
         }
 
-        let (final_node, distance_to_destination) = distances
-            .iter()
-            .filter(|(node, _)| {
-                node.position == destination_position && visited_nodes.contains(node)
-            })
-            .min_by_key(|(_, distance)| *distance)
-            .map(|(final_node, distance)| (*final_node, *distance))?;
+        let (final_node, distance_to_destination) = node_map.nodes
+            [node_map.shape.arr_index(destination_position)]
+        .iter()
+        .filter(|node| node.visited)
+        .min_by_key(|node| node.distance)
+        .map(|node| {
+            (
+                PathfindingNode {
+                    position: destination_position,
+                    direction: node.direction,
+                    length_of_straight_line: node.length_of_straight_line,
+                },
+                node.distance,
+            )
+        })?;
 
         if cfg!(feature = "visualizations") {
             let final_path = paths.get(&final_node).unwrap();
