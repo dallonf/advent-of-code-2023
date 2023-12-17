@@ -21,13 +21,17 @@ impl Day for Day17 {
     }
 
     fn part1(&self) -> Option<Result<String>> {
-        Some(try_block(move || {
-            puzzle_input()
-                .find_minimal_heat_loss()
-                .ok_or(anyhow!("No path found"))?
-                .to_string()
-                .pipe(Ok)
-        }))
+        if cfg!(feature = "slow_solutions") {
+            Some(try_block(move || {
+                puzzle_input()
+                    .find_minimal_heat_loss()
+                    .ok_or(anyhow!("No path found"))?
+                    .to_string()
+                    .pipe(Ok)
+            }))
+        } else {
+            None
+        }
     }
 
     fn part2(&self) -> Option<Result<String>> {
@@ -213,9 +217,10 @@ impl FromStr for CityMap {
 mod test {
     use super::*;
 
+    #[cfg(feature = "slow_solutions")]
     #[test]
     fn test_part1() {
-        assert_eq!(super::Day17.part1().unwrap().unwrap(), "0".to_string(),);
+        assert_eq!(super::Day17.part1().unwrap().unwrap(), "1238".to_string(),);
     }
 
     fn sample_input() -> CityMap {
