@@ -10,6 +10,17 @@ pub enum Direction {
     West = 0b1000,
 }
 
+impl Direction {
+    pub fn opposite(self) -> Self {
+        match self {
+            Direction::North => Direction::South,
+            Direction::South => Direction::North,
+            Direction::East => Direction::West,
+            Direction::West => Direction::East,
+        }
+    }
+}
+
 impl From<Direction> for IntVector {
     fn from(direction: Direction) -> Self {
         match direction {
@@ -57,6 +68,15 @@ impl IntVector {
             IntVector::new(self.x + 1, self.y),
             IntVector::new(self.x, self.y - 1),
             IntVector::new(self.x, self.y + 1),
+        ]
+    }
+
+    pub fn cardinal_neighbors_with_directions(self) -> Vec<(Self, Direction)> {
+        vec![
+            (self + WEST, Direction::West),
+            (self + EAST, Direction::East),
+            (self + NORTH, Direction::North),
+            (self + SOUTH, Direction::South),
         ]
     }
 
