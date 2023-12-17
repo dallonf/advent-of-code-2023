@@ -1,9 +1,7 @@
 // Day 17: Clumsy Crucible
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-
-use indexmap::IndexMap;
 
 use crate::framework::grid::{Direction, GridShape, IntVector};
 use crate::framework::Day;
@@ -61,8 +59,13 @@ impl CityMap {
             length_of_straight_line: u8,
         }
 
-        let mut distances = IndexMap::<PathfindingNode, u64>::new();
-        let mut paths = IndexMap::<PathfindingNode, Vec<PathfindingNode>>::new();
+        let destination_position = IntVector::new(
+            self.shape.width as isize - 1,
+            self.shape.height as isize - 1,
+        );
+
+        let mut distances = HashMap::<PathfindingNode, u64>::new();
+        let mut paths = HashMap::<PathfindingNode, Vec<PathfindingNode>>::new();
         let mut visited_nodes = HashSet::<PathfindingNode>::new();
 
         let start_node_e = PathfindingNode {
@@ -82,9 +85,9 @@ impl CityMap {
         paths.insert(start_node_s, vec![start_node_s]);
 
         fn best_node(
-            distances: &IndexMap<PathfindingNode, u64>,
+            distances: &HashMap<PathfindingNode, u64>,
             visited_nodes: &HashSet<PathfindingNode>,
-            _paths: &IndexMap<PathfindingNode, Vec<PathfindingNode>>,
+            _paths: &HashMap<PathfindingNode, Vec<PathfindingNode>>,
         ) -> Option<(PathfindingNode, u64)> {
             let result = distances
                 .iter()
@@ -110,6 +113,9 @@ impl CityMap {
 
         while let Some((node, current_distance)) = best_node(&distances, &visited_nodes, &paths) {
             visited_nodes.insert(node);
+            if node.position == destination_position {
+                break;
+            }
 
             let neighboring_nodes_and_immediate_heat_loss = node
                 .position
@@ -156,13 +162,10 @@ impl CityMap {
 
         let (final_node, distance_to_destination) = distances
             .iter()
-            .find(|(node, _)| {
-                node.position
-                    == IntVector::new(
-                        self.shape.width as isize - 1,
-                        self.shape.height as isize - 1,
-                    )
+            .filter(|(node, _)| {
+                node.position == destination_position && visited_nodes.contains(node)
             })
+            .min_by_key(|(_, distance)| *distance)
             .map(|(final_node, distance)| (*final_node, *distance))?;
 
         let final_path = paths.get(&final_node).unwrap();
