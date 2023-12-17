@@ -1,6 +1,7 @@
 // Day 17: Clumsy Crucible
 
-use std::collections::{HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::str::FromStr;
 
 use crate::framework::grid::{Direction, GridShape, IntVector};
@@ -19,21 +20,16 @@ impl Day for Day17 {
     }
 
     fn part1(&self) -> Option<Result<String>> {
-        if cfg!(feature = "slow_solutions") {
-            Some(try_block(move || {
-                puzzle_input()
-                    .find_minimal_heat_loss(SimpleCrucible)
-                    .ok_or(anyhow!("No path found"))?
-                    .to_string()
-                    .pipe(Ok)
-            }))
-        } else {
-            None
-        }
+        Some(try_block(move || {
+            puzzle_input()
+                .find_minimal_heat_loss(SimpleCrucible)
+                .ok_or(anyhow!("No path found"))?
+                .to_string()
+                .pipe(Ok)
+        }))
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        // if cfg!(feature = "slow_solutions") {
         Some(try_block(move || {
             puzzle_input()
                 .find_minimal_heat_loss(UltraCrucible)
@@ -41,9 +37,6 @@ impl Day for Day17 {
                 .to_string()
                 .pipe(Ok)
         }))
-        // } else {
-        //     None
-        // }
     }
 }
 
@@ -156,7 +149,24 @@ impl CityMap {
             self.shape.height as isize - 1,
         );
 
+        #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+        struct NodeDistance(u64, PathfindingNode);
+
+        impl PartialOrd for NodeDistance {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        impl Ord for NodeDistance {
+            fn cmp(&self, other: &Self) -> Ordering {
+                // reverse ordering so shorter paths come first
+                other.0.cmp(&self.0)
+            }
+        }
+
         let mut distances = HashMap::<PathfindingNode, u64>::new();
+        let mut distance_queue = BinaryHeap::<NodeDistance>::new();
         let mut paths = HashMap::<PathfindingNode, Vec<PathfindingNode>>::new();
         let mut visited_nodes = HashSet::<PathfindingNode>::new();
 
@@ -171,39 +181,33 @@ impl CityMap {
             length_of_straight_line: 1,
         };
 
+        distance_queue.push(NodeDistance(0, start_node_e));
         distances.insert(start_node_e, 0);
         paths.insert(start_node_e, vec![start_node_e]);
+        distance_queue.push(NodeDistance(0, start_node_s));
         distances.insert(start_node_s, 0);
         paths.insert(start_node_s, vec![start_node_s]);
 
         fn best_node(
-            distances: &HashMap<PathfindingNode, u64>,
+            distance_queue: &mut BinaryHeap<NodeDistance>,
             visited_nodes: &HashSet<PathfindingNode>,
             _paths: &HashMap<PathfindingNode, Vec<PathfindingNode>>,
         ) -> Option<(PathfindingNode, u64)> {
-            let result = distances
-                .iter()
-                .filter(|(node, _)| !visited_nodes.contains(node))
-                .min_by_key(|(_, distance)| *distance)
-                .map(|(node, distance)| (*node, *distance))?;
+            let result = {
+                loop {
+                    let node_distance = distance_queue.pop()?;
+                    if !visited_nodes.contains(&node_distance.1) {
+                        break node_distance;
+                    }
+                }
+            };
 
-            // let options = distances
-            //     .iter()
-            //     .filter(|(node, _)| !visited_nodes.contains(node))
-            //     .filter(|(_, distance)| **distance == result.1)
-            //     .collect_vec();
-
-            // if options.len() > 1 {
-            //     println!(
-            //         "multiple options are available for the next step: {:#?}",
-            //         options
-            //     );
-            // }
-
-            Some(result)
+            Some((result.1, result.0))
         }
 
-        while let Some((node, current_distance)) = best_node(&distances, &visited_nodes, &paths) {
+        while let Some((node, current_distance)) =
+            best_node(&mut distance_queue, &visited_nodes, &paths)
+        {
             visited_nodes.insert(node);
             if node.position == destination_position {
                 break;
@@ -221,16 +225,27 @@ impl CityMap {
             for (neighboring_node, immediate_heat_loss) in neighboring_nodes_and_immediate_heat_loss
             {
                 let distance = current_distance + immediate_heat_loss as u64;
-                let mut new_path = paths.get(&node).unwrap().clone();
-                new_path.push(neighboring_node);
+                let new_path = if cfg!(feature = "visualizations") {
+                    let mut new_path = paths.get(&node).unwrap().clone();
+                    new_path.push(neighboring_node);
+                    Some(new_path)
+                } else {
+                    None
+                };
                 if let Some(existing_distance) = distances.get_mut(&neighboring_node) {
                     if distance < *existing_distance {
                         *existing_distance = distance;
-                        paths.insert(neighboring_node, new_path);
+                        if cfg!(feature = "visualizations") {
+                            paths.insert(neighboring_node, new_path.unwrap());
+                        }
+                        distance_queue.push(NodeDistance(distance, neighboring_node));
                     }
                 } else {
                     distances.insert(neighboring_node, distance);
-                    paths.insert(neighboring_node, new_path);
+                    if cfg!(feature = "visualizations") {
+                        paths.insert(neighboring_node, new_path.unwrap());
+                    }
+                    distance_queue.push(NodeDistance(distance, neighboring_node));
                 }
             }
         }
@@ -243,25 +258,23 @@ impl CityMap {
             .min_by_key(|(_, distance)| *distance)
             .map(|(final_node, distance)| (*final_node, *distance))?;
 
-        let final_path = paths.get(&final_node).unwrap();
-        self.shape
-            .format_char_grid(self.shape.coord_iter().map(|coord| {
-                if let Some(path_node) = final_path.iter().find(|node| node.position == coord) {
-                    match path_node.direction {
-                        Direction::North => '^',
-                        Direction::East => '>',
-                        Direction::South => 'v',
-                        Direction::West => '<',
+        if cfg!(feature = "visualizations") {
+            let final_path = paths.get(&final_node).unwrap();
+            self.shape
+                .format_char_grid(self.shape.coord_iter().map(|coord| {
+                    if let Some(path_node) = final_path.iter().find(|node| node.position == coord) {
+                        match path_node.direction {
+                            Direction::North => '^',
+                            Direction::East => '>',
+                            Direction::South => 'v',
+                            Direction::West => '<',
+                        }
+                    } else {
+                        '.'
                     }
-                    // if path_node.length_of_straight_line >= 10 {
-                    //     return '+';
-                    // }
-                    // path_node.length_of_straight_line.to_string().chars().next().unwrap()
-                } else {
-                    '.'
-                }
-            }))
-            .pipe(|it| println!("{}", it));
+                }))
+                .pipe(|it| println!("{}", it));
+        }
 
         Some(distance_to_destination)
     }
@@ -295,10 +308,14 @@ impl FromStr for CityMap {
 mod test {
     use super::*;
 
-    #[cfg(feature = "slow_solutions")]
     #[test]
     fn test_part1() {
         assert_eq!(super::Day17.part1().unwrap().unwrap(), "1238".to_string(),);
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!(super::Day17.part2().unwrap().unwrap(), "1362".to_string(),);
     }
 
     fn sample_input() -> CityMap {
