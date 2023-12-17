@@ -150,7 +150,11 @@ impl CityMap {
         );
 
         #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-        struct NodeDistance(u64, PathfindingNode);
+        struct NodeDistance {
+            distance: u64,
+            estimated_full_path_length: u64,
+            node: PathfindingNode,
+        }
 
         impl PartialOrd for NodeDistance {
             fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -161,7 +165,9 @@ impl CityMap {
         impl Ord for NodeDistance {
             fn cmp(&self, other: &Self) -> Ordering {
                 // reverse ordering so shorter paths come first
-                other.0.cmp(&self.0)
+                other
+                    .estimated_full_path_length
+                    .cmp(&self.estimated_full_path_length)
             }
         }
 
@@ -169,6 +175,10 @@ impl CityMap {
         let mut distance_queue = BinaryHeap::<NodeDistance>::new();
         let mut paths = HashMap::<PathfindingNode, Vec<PathfindingNode>>::new();
         let mut visited_nodes = HashSet::<PathfindingNode>::new();
+
+        // worst-case scenario where all remaining nodes have a 1 cost
+        let cost_heuristic =
+            |coord: IntVector| coord.manhattan_distance(destination_position) as u64;
 
         let start_node_e = PathfindingNode {
             position: IntVector::new(0, 0),
@@ -181,10 +191,18 @@ impl CityMap {
             length_of_straight_line: 1,
         };
 
-        distance_queue.push(NodeDistance(0, start_node_e));
+        distance_queue.push(NodeDistance {
+            distance: 0,
+            estimated_full_path_length: cost_heuristic(start_node_e.position),
+            node: start_node_e,
+        });
         distances.insert(start_node_e, 0);
         paths.insert(start_node_e, vec![start_node_e]);
-        distance_queue.push(NodeDistance(0, start_node_s));
+        distance_queue.push(NodeDistance {
+            distance: 0,
+            estimated_full_path_length: cost_heuristic(start_node_s.position),
+            node: start_node_s,
+        });
         distances.insert(start_node_s, 0);
         paths.insert(start_node_s, vec![start_node_s]);
 
@@ -192,22 +210,25 @@ impl CityMap {
             distance_queue: &mut BinaryHeap<NodeDistance>,
             visited_nodes: &HashSet<PathfindingNode>,
             _paths: &HashMap<PathfindingNode, Vec<PathfindingNode>>,
-        ) -> Option<(PathfindingNode, u64)> {
+        ) -> Option<NodeDistance> {
             let result = {
                 loop {
                     let node_distance = distance_queue.pop()?;
-                    if !visited_nodes.contains(&node_distance.1) {
+                    if !visited_nodes.contains(&node_distance.node) {
                         break node_distance;
                     }
                 }
             };
 
-            Some((result.1, result.0))
+            Some(result)
         }
 
-        while let Some((node, current_distance)) =
-            best_node(&mut distance_queue, &visited_nodes, &paths)
-        {
+        while let Some(node_distance) = best_node(&mut distance_queue, &visited_nodes, &paths) {
+            let NodeDistance {
+                node,
+                distance: current_distance,
+                ..
+            } = node_distance;
             visited_nodes.insert(node);
             if node.position == destination_position {
                 break;
@@ -238,14 +259,24 @@ impl CityMap {
                         if cfg!(feature = "visualizations") {
                             paths.insert(neighboring_node, new_path.unwrap());
                         }
-                        distance_queue.push(NodeDistance(distance, neighboring_node));
+                        distance_queue.push(NodeDistance {
+                            distance,
+                            estimated_full_path_length: distance
+                                + cost_heuristic(neighboring_node.position),
+                            node: neighboring_node,
+                        });
                     }
                 } else {
                     distances.insert(neighboring_node, distance);
                     if cfg!(feature = "visualizations") {
                         paths.insert(neighboring_node, new_path.unwrap());
                     }
-                    distance_queue.push(NodeDistance(distance, neighboring_node));
+                    distance_queue.push(NodeDistance {
+                        distance,
+                        estimated_full_path_length: distance
+                            + cost_heuristic(neighboring_node.position),
+                        node: neighboring_node,
+                    });
                 }
             }
         }
