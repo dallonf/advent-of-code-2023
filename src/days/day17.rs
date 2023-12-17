@@ -22,7 +22,7 @@ impl Day for Day17 {
         if cfg!(feature = "slow_solutions") {
             Some(try_block(move || {
                 puzzle_input()
-                    .find_minimal_heat_loss()
+                    .find_minimal_heat_loss(SimpleCrucible)
                     .ok_or(anyhow!("No path found"))?
                     .to_string()
                     .pipe(Ok)
@@ -34,6 +34,48 @@ impl Day for Day17 {
 
     fn part2(&self) -> Option<Result<String>> {
         None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct PathfindingNode {
+    position: IntVector,
+    direction: Direction,
+    length_of_straight_line: u8,
+}
+
+trait Crucible {
+    fn valid_moves(&self, from_node: PathfindingNode) -> Vec<PathfindingNode>;
+}
+
+struct SimpleCrucible;
+
+impl Crucible for SimpleCrucible {
+    fn valid_moves(&self, from_node: PathfindingNode) -> Vec<PathfindingNode> {
+        from_node
+            .position
+            .cardinal_neighbors_with_directions()
+            .into_iter()
+            .filter_map(|(neighbor_position, direction)| {
+                if direction == from_node.direction.opposite() {
+                    return None;
+                }
+                if from_node.length_of_straight_line >= 3 && direction == from_node.direction {
+                    return None;
+                }
+                let new_length_of_straight_line = if direction == from_node.direction {
+                    from_node.length_of_straight_line + 1
+                } else {
+                    1
+                };
+                let node = PathfindingNode {
+                    position: neighbor_position,
+                    direction,
+                    length_of_straight_line: new_length_of_straight_line,
+                };
+                Some(node)
+            })
+            .collect()
     }
 }
 
@@ -51,14 +93,7 @@ impl CityMap {
         }
     }
 
-    fn find_minimal_heat_loss(&self) -> Option<u64> {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        struct PathfindingNode {
-            position: IntVector,
-            direction: Direction,
-            length_of_straight_line: u8,
-        }
-
+    fn find_minimal_heat_loss<TCrucible: Crucible>(&self, crucible: TCrucible) -> Option<u64> {
         let destination_position = IntVector::new(
             self.shape.width as isize - 1,
             self.shape.height as isize - 1,
@@ -117,29 +152,12 @@ impl CityMap {
                 break;
             }
 
-            let neighboring_nodes_and_immediate_heat_loss = node
-                .position
-                .cardinal_neighbors_with_directions()
+            let neighboring_nodes_and_immediate_heat_loss = crucible
+                .valid_moves(node)
                 .into_iter()
-                .filter_map(|(neighbor_position, direction)| {
-                    if direction == node.direction.opposite() {
-                        return None;
-                    }
-                    if node.length_of_straight_line >= 3 && direction == node.direction {
-                        return None;
-                    }
-                    let heat_loss = self.heat_loss_for_block(neighbor_position)?;
-                    let new_length_of_straight_line = if direction == node.direction {
-                        node.length_of_straight_line + 1
-                    } else {
-                        1
-                    };
-                    let node = PathfindingNode {
-                        position: neighbor_position,
-                        direction,
-                        length_of_straight_line: new_length_of_straight_line,
-                    };
-                    Some((node, heat_loss))
+                .filter_map(|to_node| {
+                    let heat_loss = self.heat_loss_for_block(to_node.position)?;
+                    Some((to_node, heat_loss))
                 })
                 .filter(|(node, _)| !visited_nodes.contains(node));
 
@@ -248,6 +266,9 @@ mod test {
 
     #[test]
     fn find_minimal_heat_loss() {
-        assert_eq!(sample_input().find_minimal_heat_loss(), Some(102));
+        assert_eq!(
+            sample_input().find_minimal_heat_loss(SimpleCrucible),
+            Some(102)
+        );
     }
 }
