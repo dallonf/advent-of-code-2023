@@ -4,7 +4,7 @@ use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
 use std::str::FromStr;
 
-use crate::framework::grid::{GridShape, IntVector, EAST, NORTH, SOUTH, WEST};
+use crate::framework::grid::{Direction, GridShape, IntVector, EAST, NORTH, SOUTH, WEST};
 use crate::framework::Day;
 use crate::prelude::*;
 
@@ -227,6 +227,66 @@ impl Display for DigSite {
     }
 }
 
+struct DigLine {
+    start: IntVector,
+    direction: Direction,
+    length: usize,
+}
+
+struct VirtualDigSite {
+    lines: Vec<DigLine>,
+    bound_top_left: IntVector,
+    bound_bottom_right: IntVector,
+}
+
+impl VirtualDigSite {
+    fn from_instructions(instructions: &[DigInstruction]) -> VirtualDigSite {
+        let mut current_position = IntVector::new(0, 0);
+        let mut bound_top_left = current_position;
+        let mut bound_bottom_right = current_position;
+        let lines = instructions
+            .iter()
+            .map(|instruction| {
+                let direction = match instruction.direction {
+                    DigDirection::Up => Direction::North,
+                    DigDirection::Down => Direction::South,
+                    DigDirection::Left => Direction::East,
+                    DigDirection::Right => Direction::West,
+                };
+                let length = instruction.distance;
+                let start = current_position;
+                current_position += direction.conv::<IntVector>() * length as isize;
+                if current_position.x < bound_top_left.x {
+                    bound_top_left.x = current_position.x;
+                }
+                if current_position.x > bound_bottom_right.x {
+                    bound_bottom_right.x = current_position.x;
+                }
+                if current_position.y < bound_top_left.y {
+                    bound_top_left.y = current_position.y;
+                }
+                if current_position.y > bound_bottom_right.y {
+                    bound_bottom_right.y = current_position.y;
+                }
+                DigLine {
+                    start,
+                    direction,
+                    length,
+                }
+            })
+            .collect();
+        VirtualDigSite {
+            lines,
+            bound_top_left,
+            bound_bottom_right,
+        }
+    }
+
+    fn perimeter(&self) -> usize {
+        self.lines.iter().map(|line| line.length).sum()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -279,5 +339,11 @@ mod test {
         let mut dig_site = DigSite::from_instructions(&sample_input());
         dig_site.dig_interior().unwrap();
         assert_eq!(dig_site.capacity(), 62);
+    }
+
+    #[test]
+    fn test_virtual_perimeter() {
+        let virtual_dig_site = VirtualDigSite::from_instructions(&sample_input());
+        assert_eq!(virtual_dig_site.perimeter(), 38);
     }
 }

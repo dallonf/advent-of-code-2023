@@ -1,5 +1,5 @@
 use crate::framework::prelude::*;
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Mul};
 
 /// Value can be used as a u8 bitmask
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -103,6 +103,17 @@ impl Add for IntVector {
 impl AddAssign for IntVector {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
+    }
+}
+
+impl Mul<isize> for IntVector {
+    type Output = Self;
+
+    fn mul(self, rhs: isize) -> Self::Output {
+        Self {
+            x: self.x * rhs,
+            y: self.y * rhs,
+        }
     }
 }
 
