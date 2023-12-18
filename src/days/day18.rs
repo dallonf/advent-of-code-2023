@@ -147,7 +147,6 @@ impl DigSite {
             return false;
         }
         let mut cursor = coord;
-        println!("{:?}", cursor);
         if self.get(cursor) {
             // this is a wall
             return false;
@@ -171,25 +170,6 @@ impl DigSite {
     }
 
     fn dig_interior(&mut self) -> Result<()> {
-        // let (min_x, max_x) = self
-        //     .map
-        //     .keys()
-        //     .map(|it| it.x)
-        //     .minmax()
-        //     .into_option()
-        //     .unwrap();
-        // let (min_y, may_y) = self
-        //     .map
-        //     .keys()
-        //     .map(|it| it.y)
-        //     .minmax()
-        //     .into_option()
-        //     .unwrap();
-        // let grid_shape = SignedGridShape {
-        //     top_left: IntVector::new(min_x, min_y),
-        //     bottom_right: IntVector::new(max_x, may_y),
-        // };
-
         let interior_point = {
             let boundaries = self
                 .map
@@ -197,9 +177,10 @@ impl DigSite {
                 .copied()
                 .enumerate()
                 // DIRTY DIRTY hack
-                // There's a problem with the top of the puzzle input map
+                // There's a problem handling the top of the puzzle input map
                 // where the first row looks like ....######.....
-                // and anything left of the wall is considered "inside"
+                // and anything left of the wall is considered "inside".
+                // bottom row is fine tho...
                 .rev()
                 .filter(|(_, it)| *it)
                 .map(|(index, _)| self.shape.coordinate_for_index(index));
@@ -211,19 +192,13 @@ impl DigSite {
                 .to_owned()
         };
 
-        dbg!(&interior_point);
-
         let mut queue = VecDeque::<IntVector>::new();
         queue.push_back(interior_point);
-        // let mut timeout = 10_000_000;
         while let Some(coord) = queue.pop_front() {
             if self.get(coord) {
                 continue;
             }
-            // timeout -= 1;
-            // if timeout == 0 {
-            //     return Err(anyhow!("Timeout"));
-            // }
+
             self.map[self.shape.arr_index(coord)] = true;
             let neighbors = coord.cardinal_neighbors();
             for neighbor in neighbors {
