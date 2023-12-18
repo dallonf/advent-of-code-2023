@@ -1,10 +1,10 @@
 // Day 18: Lavaduct Lagoon
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
 use std::str::FromStr;
 
-use crate::framework::grid::{IntVector, SignedGridShape, EAST, NORTH, SOUTH, WEST};
+use crate::framework::grid::{GridShape, IntVector, EAST, NORTH, SOUTH, WEST};
 use crate::framework::Day;
 use crate::prelude::*;
 
@@ -23,10 +23,8 @@ impl Day for Day18 {
     fn part1(&self) -> Option<Result<String>> {
         if cfg!(feature = "slow_solutions") {
             Some(try_block(move || {
-                let mut dig_site = DigSite::new();
-                let instructions = puzzle_input()?;
-                dig_site.dig_all(&instructions);
-                let result = dig_site.dig_borders_and_interior(&instructions);
+                let mut dig_site = DigSite::from_instructions(&puzzle_input()?);
+                let result = dig_site.dig_interior();
                 println!("{}", dig_site);
                 result?;
                 Ok(format!("{}", dig_site.capacity()))
@@ -89,52 +87,80 @@ fn parse_instructions(input: &str) -> Result<Vec<DigInstruction>> {
 }
 
 struct DigSite {
-    map: HashMap<IntVector, bool>,
-    current_position: IntVector,
+    shape: GridShape,
+    map: Box<[bool]>,
 }
 
 impl DigSite {
-    fn new() -> Self {
-        Self {
-            map: HashMap::new(),
-            current_position: IntVector::new(0, 0),
-        }
-    }
+    fn from_instructions(instructions: &[DigInstruction]) -> Self {
+        let mut dug_tiles = HashSet::<IntVector>::new();
+        let mut current_position = IntVector::new(0, 0);
 
-    fn bounds(&self) -> (IntVector, IntVector) {
-        let (min_x, max_x) = self
-            .map
-            .keys()
+        for instruction in instructions {
+            for _ in 0..instruction.distance {
+                let delta = match instruction.direction {
+                    DigDirection::Up => NORTH,
+                    DigDirection::Down => SOUTH,
+                    DigDirection::Left => WEST,
+                    DigDirection::Right => EAST,
+                };
+                current_position += delta;
+                dug_tiles.insert(current_position);
+            }
+        }
+
+        let (min_x, max_x) = dug_tiles
+            .iter()
             .map(|it| it.x)
             .minmax()
             .into_option()
             .unwrap_or((0, 0));
-        let (min_y, max_y) = self
-            .map
-            .keys()
+        let (min_y, max_y) = dug_tiles
+            .iter()
             .map(|it| it.y)
             .minmax()
             .into_option()
             .unwrap_or((0, 0));
-        (IntVector::new(min_x, min_y), IntVector::new(max_x, max_y))
+
+        let width = (max_x - min_x + 1) as usize;
+        let height = (max_y - min_y + 1) as usize;
+        let mut map = vec![false; width * height].into_boxed_slice();
+        for coord in dug_tiles {
+            let x = (coord.x - min_x) as usize;
+            let y = (coord.y - min_y) as usize;
+            let index = y * width + x;
+            map[index] = true;
+        }
+
+        Self {
+            shape: GridShape { width, height },
+            map,
+        }
+    }
+
+    fn get(&self, coord: IntVector) -> bool {
+        let index = self.shape.arr_index(coord);
+        self.map[index]
     }
 
     fn capacity(&self) -> usize {
-        self.map.len()
+        self.map.iter().copied().filter(|it| *it).count()
     }
 
     fn is_inside_borders(&self, coord: IntVector) -> bool {
-        let (min, max) = self.bounds();
+        if !self.shape.in_bounds(coord) {
+            return false;
+        }
         let mut cursor = coord;
-        if self.map.get(&cursor).is_some() {
+        if self.get(cursor) {
             // this is a wall
             return false;
         }
         let mut in_wall = false;
         let mut intersections = 0;
-        while cursor.x < max.x {
+        while cursor.x < self.shape.width as isize {
             cursor += EAST;
-            if self.map.get(&cursor).is_some() {
+            if self.get(cursor) {
                 if !in_wall {
                     intersections += 1;
                 }
@@ -148,50 +174,37 @@ impl DigSite {
         is_inside
     }
 
-    fn dig(&mut self, instruction: &DigInstruction) {
-        for _ in 0..instruction.distance {
-            let delta = match instruction.direction {
-                DigDirection::Up => NORTH,
-                DigDirection::Down => SOUTH,
-                DigDirection::Left => WEST,
-                DigDirection::Right => EAST,
-            };
-            self.current_position += delta;
-            self.map.insert(self.current_position, true);
-        }
-    }
-
-    fn dig_all(&mut self, instructions: &[DigInstruction]) {
-        for instruction in instructions {
-            self.dig(instruction);
-        }
-    }
-
     fn dig_interior(&mut self) -> Result<()> {
-        let (min_x, max_x) = self
-            .map
-            .keys()
-            .map(|it| it.x)
-            .minmax()
-            .into_option()
-            .unwrap();
-        let (min_y, may_y) = self
-            .map
-            .keys()
-            .map(|it| it.y)
-            .minmax()
-            .into_option()
-            .unwrap();
-        let grid_shape = SignedGridShape {
-            top_left: IntVector::new(min_x, min_y),
-            bottom_right: IntVector::new(max_x, may_y),
-        };
+        // let (min_x, max_x) = self
+        //     .map
+        //     .keys()
+        //     .map(|it| it.x)
+        //     .minmax()
+        //     .into_option()
+        //     .unwrap();
+        // let (min_y, may_y) = self
+        //     .map
+        //     .keys()
+        //     .map(|it| it.y)
+        //     .minmax()
+        //     .into_option()
+        //     .unwrap();
+        // let grid_shape = SignedGridShape {
+        //     top_left: IntVector::new(min_x, min_y),
+        //     bottom_right: IntVector::new(max_x, may_y),
+        // };
 
         let interior_point = {
-            let boundaries = self.map.keys();
+            let boundaries = self
+                .map
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, it)| *it)
+                .map(|(index, _)| self.shape.coordinate_for_index(index));
             let neighbors = boundaries.flat_map(|coord| coord.cardinal_neighbors());
             neighbors
-                .filter(|it| self.map.get(it).is_none() && self.is_inside_borders(*it))
+                .filter(|it| self.is_inside_borders(*it))
                 .next()
                 .ok_or(anyhow!("No interior points were found"))?
                 .to_owned()
@@ -205,39 +218,30 @@ impl DigSite {
             // if timeout == 0 {
             //     return Err(anyhow!("Timeout"));
             // }
-            self.map.insert(coord, true);
+            self.map[self.shape.arr_index(coord)] = true;
             let neighbors = coord.cardinal_neighbors();
             for neighbor in neighbors {
-                if self.map.get(&neighbor).is_none() && grid_shape.is_in_bounds(coord) {
+                if self.shape.in_bounds(neighbor) && !self.get(neighbor) {
                     queue.push_back(neighbor);
                 }
             }
         }
         Ok(())
     }
-
-    fn dig_borders_and_interior(&mut self, instructions: &[DigInstruction]) -> Result<()> {
-        self.dig_all(instructions);
-        self.dig_interior()?;
-        Ok(())
-    }
 }
 
 impl Display for DigSite {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (min, max) = self.bounds();
-        let signed_grid_shape = SignedGridShape {
-            top_left: min,
-            bottom_right: max,
-        };
         f.write_str(
-            &signed_grid_shape.format_char_grid(signed_grid_shape.coord_iter().map(|coord| {
-                if self.map.get(&coord).is_some() {
-                    '#'
-                } else {
-                    '.'
-                }
-            })),
+            &self
+                .shape
+                .format_char_grid(self.shape.coord_iter().map(|coord| {
+                    if self.get(coord) {
+                        '#'
+                    } else {
+                        '.'
+                    }
+                })),
         )
     }
 }
@@ -288,17 +292,14 @@ mod test {
 
     #[test]
     fn test_dig_sides() {
-        let mut dig_site = DigSite::new();
-        let instructions = sample_input();
-        dig_site.dig_all(&instructions);
+        let dig_site = DigSite::from_instructions(&sample_input());
         assert_eq!(dig_site.capacity(), 38);
     }
 
     #[test]
     fn test_dig_interior() {
-        let mut dig_site = DigSite::new();
-        let instructions = sample_input();
-        dig_site.dig_borders_and_interior(&instructions).unwrap();
+        let mut dig_site = DigSite::from_instructions(&sample_input());
+        dig_site.dig_interior().unwrap();
         assert_eq!(dig_site.capacity(), 62);
     }
 }
