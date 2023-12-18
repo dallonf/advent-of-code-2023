@@ -21,12 +21,19 @@ impl Day for Day18 {
     }
 
     fn part1(&self) -> Option<Result<String>> {
-        Some(try_block(move || {
-            let mut dig_site = DigSite::new();
-            let instructions = puzzle_input()?;
-            dig_site.dig_borders_and_interior(&instructions)?;
-            Ok(format!("{}", dig_site.capacity()))
-        }))
+        if cfg!(feature = "slow_solutions") {
+            Some(try_block(move || {
+                let mut dig_site = DigSite::new();
+                let instructions = puzzle_input()?;
+                dig_site.dig_all(&instructions);
+                let result = dig_site.dig_borders_and_interior(&instructions);
+                println!("{}", dig_site);
+                result?;
+                Ok(format!("{}", dig_site.capacity()))
+            }))
+        } else {
+            None
+        }
     }
 
     fn part2(&self) -> Option<Result<String>> {
@@ -190,11 +197,14 @@ impl DigSite {
                 .to_owned()
         };
 
-        println!("interior point: {:?}", interior_point);
-
         let mut queue = VecDeque::<IntVector>::new();
         queue.push_back(interior_point);
+        // let mut timeout = 10_000_000;
         while let Some(coord) = queue.pop_front() {
+            // timeout -= 1;
+            // if timeout == 0 {
+            //     return Err(anyhow!("Timeout"));
+            // }
             self.map.insert(coord, true);
             let neighbors = coord.cardinal_neighbors();
             for neighbor in neighbors {
