@@ -19,16 +19,20 @@ impl Direction {
             Direction::West => Direction::East,
         }
     }
-}
 
-impl From<Direction> for IntVector {
-    fn from(direction: Direction) -> Self {
-        match direction {
+    pub fn as_vector(&self) -> IntVector {
+        match self {
             Direction::North => NORTH,
             Direction::South => SOUTH,
             Direction::East => EAST,
             Direction::West => WEST,
         }
+    }
+}
+
+impl From<Direction> for IntVector {
+    fn from(direction: Direction) -> Self {
+        direction.as_vector()
     }
 }
 
@@ -195,6 +199,13 @@ pub struct SignedGridShape {
 }
 
 impl SignedGridShape {
+    pub fn new(top_left: IntVector, bottom_right: IntVector) -> Self {
+        SignedGridShape {
+            top_left,
+            bottom_right,
+        }
+    }
+
     pub fn is_in_bounds(&self, coord: IntVector) -> bool {
         coord.x >= self.top_left.x
             && coord.y >= self.top_left.y

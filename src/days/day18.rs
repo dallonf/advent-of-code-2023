@@ -4,7 +4,9 @@ use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
 use std::str::FromStr;
 
-use crate::framework::grid::{Direction, GridShape, IntVector, EAST, NORTH, SOUTH, WEST};
+use crate::framework::grid::{
+    Direction, GridShape, IntVector, SignedGridShape, EAST, NORTH, SOUTH, WEST,
+};
 use crate::framework::Day;
 use crate::prelude::*;
 
@@ -227,16 +229,42 @@ impl Display for DigSite {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct DigLine {
     start: IntVector,
     direction: Direction,
     length: usize,
 }
+impl DigLine {
+    fn contains(&self, coord: IntVector) -> bool {
+        match self.direction {
+            Direction::North => {
+                coord.x == self.start.x
+                    && coord.y <= self.start.y
+                    && coord.y >= self.start.y - self.length as isize
+            }
+            Direction::South => {
+                coord.x == self.start.x
+                    && coord.y >= self.start.y
+                    && coord.y <= self.start.y + self.length as isize
+            }
+            Direction::East => {
+                coord.y == self.start.y
+                    && coord.x >= self.start.x
+                    && coord.x <= self.start.x + self.length as isize
+            }
+            Direction::West => {
+                coord.y == self.start.y
+                    && coord.x <= self.start.x
+                    && coord.x >= self.start.x - self.length as isize
+            }
+        }
+    }
+}
 
 struct VirtualDigSite {
     lines: Vec<DigLine>,
-    bound_top_left: IntVector,
-    bound_bottom_right: IntVector,
+    shape: SignedGridShape,
 }
 
 impl VirtualDigSite {
@@ -250,8 +278,8 @@ impl VirtualDigSite {
                 let direction = match instruction.direction {
                     DigDirection::Up => Direction::North,
                     DigDirection::Down => Direction::South,
-                    DigDirection::Left => Direction::East,
-                    DigDirection::Right => Direction::West,
+                    DigDirection::Left => Direction::West,
+                    DigDirection::Right => Direction::East,
                 };
                 let length = instruction.distance;
                 let start = current_position;
@@ -277,13 +305,137 @@ impl VirtualDigSite {
             .collect();
         VirtualDigSite {
             lines,
-            bound_top_left,
-            bound_bottom_right,
+            shape: SignedGridShape::new(bound_top_left, bound_bottom_right),
+        }
+    }
+
+    fn subsector(&self, new_bounds: SignedGridShape) -> Self {
+        let lines = self
+            .lines
+            .iter()
+            .filter_map(|line| {
+                let start_contained = new_bounds.is_in_bounds(line.start);
+                let end = line.start + line.direction.as_vector() * line.length as isize;
+                let end_contained = new_bounds.is_in_bounds(end);
+
+                if !start_contained && !end_contained {
+                    return None;
+                }
+                // if start_contained && end_contained {
+                return Some(line.clone());
+                // }
+
+                // TODO: maybe we don't actually have to split the lines...?
+
+                // let new_start = if start_contained {
+                //     line.start
+                // } else {
+                //     match line.direction {
+                //         Direction::North => {
+                //             IntVector::new(line.start.x, subsector_1_shape.bottom_right.y)
+                //         }
+                //         Direction::South => IntVector::new(line.start.x, subsector_1_shape.top_left.y),
+                //         Direction::East => IntVector::new(subsector_1_shape.top_left.x, line.start.y),
+                //         Direction::West => {
+                //             IntVector::new(subsector_1_shape.bottom_right.x, line.start.y)
+                //         }
+                //     }
+                // };
+                // let start_difference = new_start.manhattan_distance(line.start);
+                // let new_length = line.length - start_difference;
+                // let new_endpoint = match line.direction {
+                //     Direction::North => new_start.y * new_length as isize,
+                //     Direction::South => todo!(),
+                //     Direction::East => todo!(),
+                //     Direction::West => todo!(),
+                // };
+            })
+            .collect_vec();
+
+        VirtualDigSite {
+            lines,
+            shape: new_bounds,
         }
     }
 
     fn perimeter(&self) -> usize {
         self.lines.iter().map(|line| line.length).sum()
+    }
+
+    fn area(&self) -> usize {
+        // it's square if all the contained lines are along the edge
+        let is_square = self.lines.iter().all(|line| match line.direction {
+            Direction::North | Direction::South => {
+                let line_x = line.start.x;
+                line_x == self.shape.top_left.x || line_x == self.shape.bottom_right.x
+            }
+            Direction::East | Direction::West => {
+                let line_y = line.start.y;
+                line_y == self.shape.top_left.y || line_y == self.shape.bottom_right.y
+            }
+        });
+        if is_square {
+            return self.shape.bottom_right.x.abs_diff(self.shape.top_left.x)
+                + 1 * self.shape.bottom_right.y.abs_diff(self.shape.top_left.y)
+                + 1;
+        }
+
+        let midpoint = IntVector::new(
+            (self.shape.bottom_right.x + self.shape.top_left.x) / 2,
+            (self.shape.bottom_right.y + self.shape.top_left.y) / 2,
+        );
+
+        let split_vertex = self
+            .lines
+            .iter()
+            .min_by_key(|line| line.start.manhattan_distance(midpoint))
+            .expect("lines should not be empty");
+
+        let subsector_1_shape = match split_vertex.direction {
+            Direction::North => SignedGridShape::new(
+                self.shape.top_left,
+                IntVector::new(self.shape.bottom_right.x, split_vertex.start.y + 1),
+            ),
+            Direction::South => SignedGridShape::new(
+                IntVector::new(self.shape.top_left.x, split_vertex.start.y),
+                self.shape.bottom_right,
+            ),
+            Direction::East => SignedGridShape::new(
+                IntVector::new(split_vertex.start.x, self.shape.top_left.y),
+                self.shape.bottom_right,
+            ),
+            Direction::West => SignedGridShape::new(
+                self.shape.top_left,
+                IntVector::new(split_vertex.start.x + 1, self.shape.bottom_right.y),
+            ),
+        };
+        let subsector_1 = self.subsector(subsector_1_shape);
+
+        println!("{}", self);
+        println!();
+        println!("{}", subsector_1);
+
+        // return subsector_1.area();
+        return 0;
+    }
+}
+
+impl Display for VirtualDigSite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let formatted = self
+            .shape
+            .format_char_grid(self.shape.coord_iter().map(|coord| {
+                let matching_line = self.lines.iter().find(|line| line.contains(coord));
+                let matching_line_direction = matching_line.map(|it| it.direction);
+                match matching_line_direction {
+                    Some(Direction::North) => '^',
+                    Some(Direction::South) => 'V',
+                    Some(Direction::East) => '>',
+                    Some(Direction::West) => '<',
+                    None => '.',
+                }
+            }));
+        f.write_str(&formatted)
     }
 }
 
@@ -345,5 +497,11 @@ mod test {
     fn test_virtual_perimeter() {
         let virtual_dig_site = VirtualDigSite::from_instructions(&sample_input());
         assert_eq!(virtual_dig_site.perimeter(), 38);
+    }
+
+    #[test]
+    fn test_virtual_area() {
+        let virtual_dig_site = VirtualDigSite::from_instructions(&sample_input());
+        assert_eq!(virtual_dig_site.area(), 62);
     }
 }
