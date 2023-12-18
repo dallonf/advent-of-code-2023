@@ -177,6 +177,43 @@ impl GridShape {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct SignedGridShape {
+    pub top_left: IntVector,
+    pub bottom_right: IntVector,
+}
+
+impl SignedGridShape {
+    pub fn is_in_bounds(&self, coord: IntVector) -> bool {
+        coord.x >= self.top_left.x
+            && coord.y >= self.top_left.y
+            && coord.x <= self.bottom_right.x
+            && coord.y <= self.bottom_right.y
+    }
+
+    pub fn coord_iter(&self) -> impl Iterator<Item = IntVector> + '_ {
+        (self.top_left.y..=self.bottom_right.y).flat_map(move |y| {
+            (self.top_left.x..=self.bottom_right.x).map(move |x| IntVector::new(x, y))
+        })
+    }
+
+    pub fn format_char_grid(&self, chars: impl IntoIterator<Item = char>) -> String {
+        let mut result = String::new();
+        let mut chars = chars.into_iter().peekable();
+        while chars.peek().is_some() {
+            for _ in self.top_left.x..=self.bottom_right.x {
+                if let Some(next_char) = chars.next() {
+                    result.push(next_char);
+                } else {
+                    break;
+                }
+            }
+            result.push('\n');
+        }
+        result
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
