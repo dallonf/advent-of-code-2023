@@ -321,34 +321,47 @@ impl VirtualDigSite {
                 if !start_contained && !end_contained {
                     return None;
                 }
-                // if start_contained && end_contained {
-                return Some(line.clone());
-                // }
+                if start_contained && end_contained {
+                    return Some(line.clone());
+                }
 
-                // TODO: maybe we don't actually have to split the lines...?
+                let new_start = if start_contained {
+                    line.start
+                } else {
+                    match line.direction {
+                        Direction::North => IntVector::new(line.start.x, new_bounds.bottom_right.y),
+                        Direction::South => IntVector::new(line.start.x, new_bounds.top_left.y),
+                        Direction::East => IntVector::new(new_bounds.top_left.x, line.start.y),
+                        Direction::West => IntVector::new(new_bounds.bottom_right.x, line.start.y),
+                    }
+                };
+                let start_difference = new_start.manhattan_distance(line.start);
+                let new_length = line.length - start_difference;
+                let new_end = match line.direction {
+                    Direction::North => IntVector::new(
+                        new_start.x,
+                        (new_start.y - new_length as isize).max(new_bounds.top_left.y),
+                    ),
+                    Direction::South => IntVector::new(
+                        new_start.x,
+                        (new_start.y + new_length as isize).min(new_bounds.bottom_right.y),
+                    ),
+                    Direction::East => IntVector::new(
+                        (new_start.x + new_length as isize).min(new_bounds.bottom_right.x),
+                        new_start.y,
+                    ),
+                    Direction::West => IntVector::new(
+                        (new_start.x - new_length as isize).max(new_bounds.top_left.x),
+                        new_start.y,
+                    ),
+                };
+                let new_length = new_start.manhattan_distance(new_end);
 
-                // let new_start = if start_contained {
-                //     line.start
-                // } else {
-                //     match line.direction {
-                //         Direction::North => {
-                //             IntVector::new(line.start.x, subsector_1_shape.bottom_right.y)
-                //         }
-                //         Direction::South => IntVector::new(line.start.x, subsector_1_shape.top_left.y),
-                //         Direction::East => IntVector::new(subsector_1_shape.top_left.x, line.start.y),
-                //         Direction::West => {
-                //             IntVector::new(subsector_1_shape.bottom_right.x, line.start.y)
-                //         }
-                //     }
-                // };
-                // let start_difference = new_start.manhattan_distance(line.start);
-                // let new_length = line.length - start_difference;
-                // let new_endpoint = match line.direction {
-                //     Direction::North => new_start.y * new_length as isize,
-                //     Direction::South => todo!(),
-                //     Direction::East => todo!(),
-                //     Direction::West => todo!(),
-                // };
+                Some(DigLine {
+                    start: new_start,
+                    direction: line.direction,
+                    length: new_length,
+                })
             })
             .collect_vec();
 
@@ -388,9 +401,17 @@ impl VirtualDigSite {
         let split_vertex = self
             .lines
             .iter()
+            // .filter(|line| {
+            //     // don't choose a vertex right on the edge
+            //     line.start.x != self.shape.bottom_right.x
+            //         && line.start.y != self.shape.bottom_right.y
+            //         && line.start.x != self.shape.top_left.x
+            //         && line.start.y != self.shape.top_left.y
+            // })
             .min_by_key(|line| line.start.manhattan_distance(midpoint))
-            .expect("lines should not be empty");
+            .expect("nothing to split on");
 
+        dbg!(split_vertex);
         let subsector_1_shape = match split_vertex.direction {
             Direction::North => SignedGridShape::new(
                 self.shape.top_left,
@@ -409,13 +430,14 @@ impl VirtualDigSite {
                 IntVector::new(split_vertex.start.x + 1, self.shape.bottom_right.y),
             ),
         };
+        if subsector_1_shape == self.shape {
+            panic!("shape didn't change");
+        }
         let subsector_1 = self.subsector(subsector_1_shape);
 
-        println!("{}", self);
-        println!();
         println!("{}", subsector_1);
 
-        // return subsector_1.area();
+        return subsector_1.area();
         return 0;
     }
 }
