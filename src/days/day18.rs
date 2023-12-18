@@ -21,17 +21,12 @@ impl Day for Day18 {
     }
 
     fn part1(&self) -> Option<Result<String>> {
-        if cfg!(feature = "slow_solutions") {
-            Some(try_block(move || {
-                let mut dig_site = DigSite::from_instructions(&puzzle_input()?);
-                let result = dig_site.dig_interior();
-                println!("{}", dig_site);
-                result?;
-                Ok(format!("{}", dig_site.capacity()))
-            }))
-        } else {
-            None
-        }
+        Some(try_block(move || {
+            let mut dig_site = DigSite::from_instructions(&puzzle_input()?);
+            let result = dig_site.dig_interior();
+            result?;
+            Ok(format!("{}", dig_site.capacity()))
+        }))
     }
 
     fn part2(&self) -> Option<Result<String>> {
@@ -152,13 +147,14 @@ impl DigSite {
             return false;
         }
         let mut cursor = coord;
+        println!("{:?}", cursor);
         if self.get(cursor) {
             // this is a wall
             return false;
         }
         let mut in_wall = false;
         let mut intersections = 0;
-        while cursor.x < self.shape.width as isize {
+        while self.shape.in_bounds(cursor + EAST) {
             cursor += EAST;
             if self.get(cursor) {
                 if !in_wall {
@@ -200,6 +196,11 @@ impl DigSite {
                 .iter()
                 .copied()
                 .enumerate()
+                // DIRTY DIRTY hack
+                // There's a problem with the top of the puzzle input map
+                // where the first row looks like ....######.....
+                // and anything left of the wall is considered "inside"
+                .rev()
                 .filter(|(_, it)| *it)
                 .map(|(index, _)| self.shape.coordinate_for_index(index));
             let neighbors = boundaries.flat_map(|coord| coord.cardinal_neighbors());
@@ -210,10 +211,15 @@ impl DigSite {
                 .to_owned()
         };
 
+        dbg!(&interior_point);
+
         let mut queue = VecDeque::<IntVector>::new();
         queue.push_back(interior_point);
         // let mut timeout = 10_000_000;
         while let Some(coord) = queue.pop_front() {
+            if self.get(coord) {
+                continue;
+            }
             // timeout -= 1;
             // if timeout == 0 {
             //     return Err(anyhow!("Timeout"));
@@ -221,7 +227,7 @@ impl DigSite {
             self.map[self.shape.arr_index(coord)] = true;
             let neighbors = coord.cardinal_neighbors();
             for neighbor in neighbors {
-                if self.shape.in_bounds(neighbor) && !self.get(neighbor) {
+                if self.shape.in_bounds(neighbor) {
                     queue.push_back(neighbor);
                 }
             }
@@ -252,10 +258,7 @@ mod test {
 
     #[test]
     fn test_part1() {
-        assert_eq!(
-            super::Day18.part1().unwrap().unwrap(),
-            "Hello, world!".to_string(),
-        );
+        assert_eq!(super::Day18.part1().unwrap().unwrap(), "34329".to_string(),);
     }
 
     fn sample_input() -> Vec<DigInstruction> {
