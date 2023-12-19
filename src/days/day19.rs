@@ -9,6 +9,10 @@ use regex::Regex;
 use crate::framework::Day;
 use crate::prelude::*;
 
+fn puzzle_input() -> Result<Input> {
+    include_str!("./day19_input.txt").parse()
+}
+
 pub struct Day19;
 
 impl Day for Day19 {
@@ -17,7 +21,11 @@ impl Day for Day19 {
     }
 
     fn part1(&self) -> Option<Result<String>> {
-        Some(try_block(move || Ok("Hello, world!".to_string())))
+        Some(try_block(move || {
+            puzzle_input()?
+                .accepted_parts_rating()
+                .map(|it| it.to_string())
+        }))
     }
 
     fn part2(&self) -> Option<Result<String>> {
@@ -51,6 +59,20 @@ struct Part {
     m: u32,
     a: u32,
     s: u32,
+}
+impl Part {
+    fn get(&self, category: RatingCategory) -> u32 {
+        match category {
+            RatingCategory::X => self.x,
+            RatingCategory::M => self.m,
+            RatingCategory::A => self.a,
+            RatingCategory::S => self.s,
+        }
+    }
+
+    fn rating(&self) -> u64 {
+        self.x as u64 + self.m as u64 + self.a as u64 + self.s as u64
+    }
 }
 
 lazy_static! {
@@ -136,6 +158,18 @@ struct Workflow {
     fallback: Outcome,
 }
 
+impl Workflow {
+    fn follow(&self, part: &Part) -> Outcome {
+        for rule in &self.rules {
+            let value = part.get(rule.category);
+            if rule.comparison == value.cmp(&rule.value) {
+                return rule.outcome.clone();
+            }
+        }
+        self.fallback.clone()
+    }
+}
+
 lazy_static! {
     static ref WORKFLOW_REGEX: Regex =
         Regex::new(r"^([a-z]+)\{([a-zA-Z0-9<>=:,]+),([a-zA-Z]+)\}$").unwrap();
@@ -167,6 +201,20 @@ struct WorkflowSeries {
     workflows: HashMap<String, Workflow>,
 }
 
+impl WorkflowSeries {
+    fn follow(&self, part: &Part) -> Result<Outcome> {
+        let mut outcome = Outcome::Workflow("in".to_string());
+        while let Outcome::Workflow(workflow_name) = outcome {
+            let workflow = self
+                .workflows
+                .get(&workflow_name)
+                .ok_or(anyhow!("Workflow not found: {}", workflow_name))?;
+            outcome = workflow.follow(part);
+        }
+        Ok(outcome)
+    }
+}
+
 impl FromStr for WorkflowSeries {
     type Err = Error;
 
@@ -185,6 +233,23 @@ impl FromStr for WorkflowSeries {
 struct Input {
     workflows: WorkflowSeries,
     parts: Vec<Part>,
+}
+
+impl Input {
+    fn accepted_parts_rating(&self) -> Result<u64> {
+        self.parts
+            .iter()
+            .map(|part| {
+                let accepted = self
+                    .workflows
+                    .follow(part)
+                    .map(|outcome| outcome == Outcome::Accept)?;
+                Ok((part, accepted))
+            })
+            .filter_ok(|(_, accepted)| *accepted)
+            .map_ok(|(part, _)| part.rating())
+            .sum::<Result<u64>>()
+    }
 }
 
 impl FromStr for Input {
@@ -210,7 +275,7 @@ mod test {
     fn test_part1() {
         assert_eq!(
             super::Day19.part1().unwrap().unwrap(),
-            "Hello, world!".to_string(),
+            "402185".to_string(),
         );
     }
 
@@ -243,5 +308,77 @@ mod test {
         let input = sample_input();
         assert_eq!(input.parts.len(), 5);
         assert_eq!(input.workflows.workflows.len(), 11);
+    }
+
+    #[test]
+    fn test_workflow() {
+        let workflow = Workflow::from_str("ex{x>10:one,m<20:two,a>30:R,A}").unwrap();
+        assert_eq!(
+            workflow.follow(&Part {
+                x: 11,
+                m: 0,
+                a: 0,
+                s: 0
+            }),
+            Outcome::Workflow("one".to_string())
+        );
+        assert_eq!(
+            workflow.follow(&Part {
+                x: 0,
+                m: 19,
+                a: 0,
+                s: 0
+            }),
+            Outcome::Workflow("two".to_string())
+        );
+        assert_eq!(
+            workflow.follow(&Part {
+                x: 0,
+                m: 21,
+                a: 31,
+                s: 0
+            }),
+            Outcome::Reject
+        );
+        assert_eq!(
+            workflow.follow(&Part {
+                x: 0,
+                m: 21,
+                a: 0,
+                s: 0
+            }),
+            Outcome::Accept
+        );
+    }
+
+    #[test]
+    fn test_workflow_series() {
+        let input = sample_input();
+        assert_eq!(
+            input.workflows.follow(&input.parts[0]).unwrap(),
+            Outcome::Accept
+        );
+        assert_eq!(
+            input.workflows.follow(&input.parts[1]).unwrap(),
+            Outcome::Reject
+        );
+        assert_eq!(
+            input.workflows.follow(&input.parts[2]).unwrap(),
+            Outcome::Accept
+        );
+        assert_eq!(
+            input.workflows.follow(&input.parts[3]).unwrap(),
+            Outcome::Reject
+        );
+        assert_eq!(
+            input.workflows.follow(&input.parts[4]).unwrap(),
+            Outcome::Accept
+        );
+    }
+
+    #[test]
+    fn test_accepted_parts_rating() {
+        let input = sample_input();
+        assert_eq!(input.accepted_parts_rating().unwrap(), 19114);
     }
 }

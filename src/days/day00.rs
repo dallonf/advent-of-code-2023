@@ -11,7 +11,7 @@ impl Day for Day0 {
     }
 
     fn part1(&self) -> Option<Result<String>> {
-        Some(try_block(move || Ok("Hello, world!".to_string())))
+        Some(try_block(move || "Hello, world!".to_string().pipe(Ok)))
     }
 
     fn part2(&self) -> Option<Result<String>> {
