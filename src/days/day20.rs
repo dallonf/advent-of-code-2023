@@ -28,7 +28,16 @@ impl Day for Day20 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        if cfg!(feature = "slow_solutions") {
+            Some(try_block(move || {
+                let result = puzzle_input()?
+                    .into_state()
+                    .find_button_presses_until_target("rx")?;
+                result.to_string().pipe(Ok)
+            }))
+        } else {
+            None
+        }
     }
 }
 
@@ -250,6 +259,20 @@ impl ModuleConfigurationState {
             })?
         }
         Ok((low, high))
+    }
+
+    fn find_button_presses_until_target(&mut self, target: &str) -> Result<usize> {
+        let mut button_presses = 0;
+        let mut found = false;
+        while !found {
+            button_presses += 1;
+            self.push_button(|pulse| {
+                if pulse.pulse == false && pulse.destination_module == target {
+                    found = true;
+                }
+            })?
+        }
+        Ok(button_presses)
     }
 }
 
