@@ -1,6 +1,7 @@
 // Day 20: Pulse Propagation
 
 use std::collections::{HashMap, VecDeque};
+use std::fmt::Write;
 use std::str::FromStr;
 
 use crate::framework::Day;
@@ -42,7 +43,15 @@ impl Day for Day20 {
 
     fn run_script(&self, name: &str) -> anyhow::Result<bool> {
         if name == "mermaid_diagram" {
-            println!("heyo, it works!");
+            let configuration = indoc! {"
+                broadcaster -> a
+                %a -> inv, con
+                &inv -> b
+                %b -> con
+                &con -> output
+            "}
+            .parse::<ModuleConfiguration>()?;
+            println!("{}", configuration.as_mermaid_diagram());
             return Ok(true);
         }
 
@@ -202,6 +211,28 @@ impl ModuleConfiguration {
             })
             .collect();
         ModuleConfigurationState { modules }
+    }
+
+    fn as_mermaid_diagram(&self) -> String {
+        let mut result = String::new();
+        writeln!(result, "graph TD;").unwrap();
+        for module_def in self.module_definitions.values() {
+            let module_id = &module_def.module_id;
+            let module_name = match module_def.module_type {
+                ModuleType::Broadcaster => None,
+                ModuleType::FlipFlop => Some(format!("%{}", module_id)),
+                ModuleType::Conjunction => Some(format!("&{}", module_id)),
+            };
+            let module_node = if let Some(module_name) = module_name {
+                format!("{}[{}]", module_id, module_name)
+            } else {
+                module_id.to_owned()
+            };
+            for destination in &module_def.destination_modules {
+                writeln!(result, "  {} --> {}", module_node, destination).unwrap();
+            }
+        }
+        result
     }
 }
 
