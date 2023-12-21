@@ -5,9 +5,7 @@ use std::fmt::Display;
 use std::ops::Range;
 use std::str::FromStr;
 
-use crate::framework::grid::{
-    Direction, GridShape, IntVector, SignedGridShape, EAST, NORTH, SOUTH, WEST,
-};
+use crate::framework::grid::{Direction, GridShape, IntVector, EAST, NORTH, SOUTH, WEST};
 use crate::framework::Day;
 use crate::prelude::*;
 
@@ -33,7 +31,12 @@ impl Day for Day18 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            let mut dig_site = DigSite::from_instructions_to_repair(&puzzle_input()?)?;
+            let result = dig_site.dig_interior();
+            result?;
+            Ok(format!("{}", dig_site.capacity()))
+        }))
     }
 }
 
@@ -41,7 +44,27 @@ impl Day for Day18 {
 struct DigInstruction {
     direction: Direction,
     distance: usize,
-    hex_color: String,
+    hex_color: Option<String>,
+}
+
+impl DigInstruction {
+    fn repair_from_hex_code(hex_code: &str) -> Result<DigInstruction> {
+        let distance_hex: String = hex_code.chars().take(5).collect();
+        let direction_hex: char = hex_code.chars().nth(5).unwrap();
+        let distance = usize::from_str_radix(&distance_hex, 16)?;
+        let direction = match direction_hex {
+            '0' => Direction::East,
+            '1' => Direction::South,
+            '2' => Direction::West,
+            '3' => Direction::North,
+            c => return Err(anyhow!("Invalid direction: {}", c)),
+        };
+        Ok(Self {
+            direction,
+            distance,
+            hex_color: None,
+        })
+    }
 }
 
 impl FromStr for DigInstruction {
@@ -64,7 +87,7 @@ impl FromStr for DigInstruction {
         Ok(Self {
             direction,
             distance,
-            hex_color,
+            hex_color: Some(hex_color),
         })
     }
 }
@@ -85,21 +108,32 @@ struct DigSite {
 }
 
 impl DigSite {
+    fn from_instructions_to_repair(instructions: &[DigInstruction]) -> Result<Self> {
+        let repaired_instructions = instructions
+            .iter()
+            .map(|it| {
+                it.hex_color
+                    .as_ref()
+                    .ok_or(anyhow!("Missing hex code"))?
+                    .pipe(|hex_code| DigInstruction::repair_from_hex_code(hex_code))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self::from_instructions(&repaired_instructions))
+    }
+
     fn from_instructions(instructions: &[DigInstruction]) -> Self {
         let mut dig_lines = Vec::<DigLine>::new();
 
         let mut current_position = IntVector::new(0, 0);
         for instruction in instructions {
-            for _ in 0..instruction.distance {
-                let delta: IntVector = instruction.direction.into();
-                dig_lines.push(DigLine {
-                    start: current_position,
-                    direction: instruction.direction,
-                    length: instruction.distance,
-                });
+            let delta: IntVector = instruction.direction.into();
+            dig_lines.push(DigLine {
+                start: current_position,
+                direction: instruction.direction,
+                length: instruction.distance,
+            });
 
-                current_position += delta;
-            }
+            current_position += delta * instruction.distance as isize;
         }
 
         fn coordinate_ranges(
@@ -299,32 +333,6 @@ struct DigLine {
     direction: Direction,
     length: usize,
 }
-impl DigLine {
-    fn contains(&self, coord: IntVector) -> bool {
-        match self.direction {
-            Direction::North => {
-                coord.x == self.start.x
-                    && coord.y <= self.start.y
-                    && coord.y >= self.start.y - self.length as isize
-            }
-            Direction::South => {
-                coord.x == self.start.x
-                    && coord.y >= self.start.y
-                    && coord.y <= self.start.y + self.length as isize
-            }
-            Direction::East => {
-                coord.y == self.start.y
-                    && coord.x >= self.start.x
-                    && coord.x <= self.start.x + self.length as isize
-            }
-            Direction::West => {
-                coord.y == self.start.y
-                    && coord.x <= self.start.x
-                    && coord.x >= self.start.x - self.length as isize
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 mod test {
@@ -333,6 +341,14 @@ mod test {
     #[test]
     fn test_part1() {
         assert_eq!(super::Day18.part1().unwrap().unwrap(), "34329".to_string(),);
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!(
+            super::Day18.part2().unwrap().unwrap(),
+            "42617947302920".to_string(),
+        );
     }
 
     fn sample_input() -> Vec<DigInstruction> {
@@ -362,7 +378,7 @@ mod test {
         let expected = DigInstruction {
             direction: Direction::East,
             distance: 6,
-            hex_color: "70c710".to_string(),
+            hex_color: Some("70c710".to_string()),
         };
         assert_eq!(input.parse::<DigInstruction>().unwrap(), expected);
     }
@@ -378,5 +394,141 @@ mod test {
         let mut dig_site = DigSite::from_instructions(&sample_input());
         dig_site.dig_interior().unwrap();
         assert_eq!(dig_site.capacity(), 62);
+    }
+
+    #[test]
+    fn test_repair_from_hex_code() {
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("70c710").unwrap(),
+            DigInstruction {
+                direction: Direction::East,
+                distance: 461937,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("0dc571").unwrap(),
+            DigInstruction {
+                direction: Direction::South,
+                distance: 56407,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("5713f0").unwrap(),
+            DigInstruction {
+                direction: Direction::East,
+                distance: 356671,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("d2c081").unwrap(),
+            DigInstruction {
+                direction: Direction::South,
+                distance: 863240,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("59c680").unwrap(),
+            DigInstruction {
+                direction: Direction::East,
+                distance: 367720,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("411b91").unwrap(),
+            DigInstruction {
+                direction: Direction::South,
+                distance: 266681,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("8ceee2").unwrap(),
+            DigInstruction {
+                direction: Direction::West,
+                distance: 577262,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("caa173").unwrap(),
+            DigInstruction {
+                direction: Direction::North,
+                distance: 829975,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("1b58a2").unwrap(),
+            DigInstruction {
+                direction: Direction::West,
+                distance: 112010,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("caa171").unwrap(),
+            DigInstruction {
+                direction: Direction::South,
+                distance: 829975,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("7807d2").unwrap(),
+            DigInstruction {
+                direction: Direction::West,
+                distance: 491645,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("a77fa3").unwrap(),
+            DigInstruction {
+                direction: Direction::North,
+                distance: 686074,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("015232").unwrap(),
+            DigInstruction {
+                direction: Direction::West,
+                distance: 5411,
+                hex_color: None,
+            }
+        );
+
+        assert_eq!(
+            DigInstruction::repair_from_hex_code("7a21e3").unwrap(),
+            DigInstruction {
+                direction: Direction::North,
+                distance: 500254,
+                hex_color: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_dig_repaired() {
+        let mut dig_site = DigSite::from_instructions_to_repair(&sample_input()).unwrap();
+        dig_site.dig_interior().unwrap();
+        assert_eq!(dig_site.capacity(), 952408144115);
     }
 }

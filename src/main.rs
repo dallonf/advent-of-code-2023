@@ -90,7 +90,7 @@ fn main() {
             println!("WARNING: Did you forget to change the day_number() for one of the days?");
         }
 
-        if args.day == Some(day.day_number()) {
+        if args.day.is_some() && args.day != Some(day.day_number()) {
             continue;
         }
 

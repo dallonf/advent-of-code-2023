@@ -190,6 +190,10 @@ impl GridShape {
             && coord.x < (self.width as isize)
             && coord.y < (self.height as isize)
     }
+
+    pub fn area(&self) -> usize {
+        self.width * self.height
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -198,6 +202,7 @@ pub struct SignedGridShape {
     pub bottom_right: IntVector,
 }
 
+#[allow(dead_code)]
 impl SignedGridShape {
     pub fn new(top_left: IntVector, bottom_right: IntVector) -> Self {
         SignedGridShape {
