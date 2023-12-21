@@ -69,6 +69,22 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
+    if let Some(script) = args.script {
+        let day_number = args.day.expect("Must specify a day when using --script");
+
+        let result = DAYS
+            .iter()
+            .find(|day| day.day_number() == day_number)
+            .expect("Day not found")
+            .run_script(&script)
+            .unwrap();
+
+        if !result {
+            println!("\"{}\" script not found.", script);
+        }
+        return;
+    }
+
     for day in DAYS.iter() {
         if day.day_number() == 0 {
             println!("WARNING: Did you forget to change the day_number() for one of the days?");

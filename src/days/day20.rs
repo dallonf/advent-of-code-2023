@@ -39,6 +39,15 @@ impl Day for Day20 {
             None
         }
     }
+
+    fn run_script(&self, name: &str) -> anyhow::Result<bool> {
+        if name == "mermaid_diagram" {
+            println!("heyo, it works!");
+            return Ok(true);
+        }
+
+        return Ok(false);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
