@@ -2,6 +2,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
+use std::ops::Range;
 use std::str::FromStr;
 
 use crate::framework::grid::{
@@ -36,17 +37,9 @@ impl Day for Day18 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum DigDirection {
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DigInstruction {
-    direction: DigDirection,
+    direction: Direction,
     distance: usize,
     hex_color: String,
 }
@@ -60,10 +53,10 @@ impl FromStr for DigInstruction {
             return Err(anyhow!("Invalid instruction: {}", s));
         }
         let direction = match parts[0] {
-            "U" => DigDirection::Up,
-            "D" => DigDirection::Down,
-            "L" => DigDirection::Left,
-            "R" => DigDirection::Right,
+            "U" => Direction::North,
+            "D" => Direction::South,
+            "L" => Direction::West,
+            "R" => Direction::East,
             c => return Err(anyhow!("Invalid direction: {}", c)),
         };
         let distance: usize = parts[1].parse()?;
@@ -84,127 +77,180 @@ fn parse_instructions(input: &str) -> Result<Vec<DigInstruction>> {
 }
 
 struct DigSite {
-    shape: GridShape,
-    map: Box<[bool]>,
+    rows: Vec<Range<isize>>,
+    columns: Vec<Range<isize>>,
+    compressed_shape: GridShape,
+    compressed_map: Box<[bool]>,
+    compressed_interior_point: IntVector,
 }
 
 impl DigSite {
     fn from_instructions(instructions: &[DigInstruction]) -> Self {
-        let mut dug_tiles = HashSet::<IntVector>::new();
-        let mut current_position = IntVector::new(0, 0);
+        let mut dig_lines = Vec::<DigLine>::new();
 
+        let mut current_position = IntVector::new(0, 0);
         for instruction in instructions {
             for _ in 0..instruction.distance {
-                let delta = match instruction.direction {
-                    DigDirection::Up => NORTH,
-                    DigDirection::Down => SOUTH,
-                    DigDirection::Left => WEST,
-                    DigDirection::Right => EAST,
-                };
+                let delta: IntVector = instruction.direction.into();
+                dig_lines.push(DigLine {
+                    start: current_position,
+                    direction: instruction.direction,
+                    length: instruction.distance,
+                });
+
                 current_position += delta;
-                dug_tiles.insert(current_position);
             }
         }
 
-        let (min_x, max_x) = dug_tiles
-            .iter()
-            .map(|it| it.x)
-            .minmax()
-            .into_option()
-            .unwrap_or((0, 0));
-        let (min_y, max_y) = dug_tiles
-            .iter()
-            .map(|it| it.y)
-            .minmax()
-            .into_option()
-            .unwrap_or((0, 0));
+        fn coordinate_ranges(
+            coordinates_on_axis: impl IntoIterator<Item = isize>,
+        ) -> Vec<Range<isize>> {
+            let coordinates_in_order = coordinates_on_axis
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect_vec()
+                .pipe(|mut coords| {
+                    coords.sort_unstable();
+                    coords
+                });
 
-        let width = (max_x - min_x + 1) as usize;
-        let height = (max_y - min_y + 1) as usize;
-        let mut map = vec![false; width * height].into_boxed_slice();
-        for coord in dug_tiles {
-            let x = (coord.x - min_x) as usize;
-            let y = (coord.y - min_y) as usize;
-            let index = y * width + x;
-            map[index] = true;
+            let mut ranges = Vec::<Range<isize>>::new();
+            let mut prev_coord = coordinates_in_order[0];
+            ranges.push(prev_coord..prev_coord + 1);
+            for coord in coordinates_in_order.into_iter().skip(1) {
+                if coord - prev_coord > 1 {
+                    // gap
+                    ranges.push(prev_coord + 1..coord);
+                }
+                ranges.push(coord..coord + 1);
+                prev_coord = coord;
+            }
+            ranges
+        }
+
+        let columns = coordinate_ranges(dig_lines.iter().map(|it| it.start.x));
+        let rows = coordinate_ranges(dig_lines.iter().map(|it| it.start.y));
+
+        let compressed_shape = GridShape {
+            width: columns.len(),
+            height: rows.len(),
+        };
+        let mut compressed_map = vec![false; compressed_shape.area()].into_boxed_slice();
+
+        let mut current_position_uncompressed = IntVector::new(0, 0);
+        for instruction in instructions {
+            let current_position_compressed =
+                get_compressed_position(current_position_uncompressed, &rows, &columns);
+            let end_uncompressed = current_position_uncompressed
+                + instruction.direction.as_vector() * instruction.distance as isize;
+            let compressed_coords = match instruction.direction {
+                Direction::North => {
+                    let y_coords = rows
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .skip_while(|(_, range)| !range.contains(&current_position_uncompressed.y))
+                        .take_while(|(_, range)| range.start > end_uncompressed.y)
+                        .map(|it| IntVector::new(current_position_compressed.x, it.0 as isize))
+                        .collect_vec();
+                    y_coords
+                }
+                Direction::South => {
+                    let y_coords = rows
+                        .iter()
+                        .enumerate()
+                        .skip_while(|(_, range)| !range.contains(&current_position_uncompressed.y))
+                        .take_while(|(_, range)| range.end <= end_uncompressed.y)
+                        .map(|it| IntVector::new(current_position_compressed.x, it.0 as isize))
+                        .collect_vec();
+                    y_coords
+                }
+                Direction::East => {
+                    let x_coords = columns
+                        .iter()
+                        .enumerate()
+                        .skip_while(|(_, range)| !range.contains(&current_position_uncompressed.x))
+                        .take_while(|(_, range)| range.end <= end_uncompressed.x)
+                        .map(|it| IntVector::new(it.0 as isize, current_position_compressed.y))
+                        .collect_vec();
+                    x_coords
+                }
+                Direction::West => {
+                    let x_coords = columns
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .skip_while(|(_, range)| !range.contains(&current_position_uncompressed.x))
+                        .take_while(|(_, range)| range.start > end_uncompressed.x)
+                        .map(|it| IntVector::new(it.0 as isize, current_position_compressed.y))
+                        .collect_vec();
+                    x_coords
+                }
+            };
+
+            for coord in compressed_coords {
+                compressed_map[compressed_shape.arr_index(coord)] = true;
+            }
+            current_position_uncompressed = end_uncompressed;
+        }
+
+        // lil hack to get the interior point
+        // we can assume the dig lines run clockwise and the corners don't get too close to each other
+        let dig_line = dig_lines[0];
+        let interior_point = dig_line.start
+            + match dig_line.direction {
+                Direction::North => NORTH + EAST,
+                Direction::South => SOUTH + WEST,
+                Direction::East => EAST + SOUTH,
+                Direction::West => WEST + NORTH,
+            };
+        let compressed_interior_point = get_compressed_position(interior_point, &rows, &columns);
+        if compressed_map[compressed_shape.arr_index(compressed_interior_point)] {
+            panic!("Interior point is a wall");
         }
 
         Self {
-            shape: GridShape { width, height },
-            map,
+            rows,
+            columns,
+            compressed_shape,
+            compressed_map,
+            compressed_interior_point,
         }
     }
 
-    fn get(&self, coord: IntVector) -> bool {
-        let index = self.shape.arr_index(coord);
-        self.map[index]
+    fn get_compressed(&self, coord: IntVector) -> bool {
+        let index = self.compressed_shape.arr_index(coord);
+        self.compressed_map[index]
     }
 
     fn capacity(&self) -> usize {
-        self.map.iter().copied().filter(|it| *it).count()
-    }
-
-    fn is_inside_borders(&self, coord: IntVector) -> bool {
-        if !self.shape.in_bounds(coord) {
-            return false;
-        }
-        let mut cursor = coord;
-        if self.get(cursor) {
-            // this is a wall
-            return false;
-        }
-        let mut in_wall = false;
-        let mut intersections = 0;
-        while self.shape.in_bounds(cursor + EAST) {
-            cursor += EAST;
-            if self.get(cursor) {
-                if !in_wall {
-                    intersections += 1;
-                }
-                in_wall = true;
-            } else {
-                in_wall = false;
-            }
-        }
-
-        let is_inside = intersections % 2 == 1;
-        is_inside
+        self.compressed_map
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, it)| *it)
+            .map(|(compressed_index, _)| {
+                let compressed_coord = self.compressed_shape.coordinate_for_index(compressed_index);
+                let x_range = self.columns[compressed_coord.x as usize].clone();
+                let y_range = self.rows[compressed_coord.y as usize].clone();
+                x_range.len() * y_range.len() as usize
+            })
+            .sum()
     }
 
     fn dig_interior(&mut self) -> Result<()> {
-        let interior_point = {
-            let boundaries = self
-                .map
-                .iter()
-                .copied()
-                .enumerate()
-                // DIRTY DIRTY hack
-                // There's a problem handling the top of the puzzle input map
-                // where the first row looks like ....######.....
-                // and anything left of the wall is considered "inside".
-                // bottom row is fine tho...
-                .rev()
-                .filter(|(_, it)| *it)
-                .map(|(index, _)| self.shape.coordinate_for_index(index));
-            let neighbors = boundaries.flat_map(|coord| coord.cardinal_neighbors());
-            neighbors
-                .filter(|it| self.is_inside_borders(*it))
-                .next()
-                .ok_or(anyhow!("No interior points were found"))?
-                .to_owned()
-        };
-
         let mut queue = VecDeque::<IntVector>::new();
-        queue.push_back(interior_point);
+        queue.push_back(self.compressed_interior_point);
         while let Some(coord) = queue.pop_front() {
-            if self.get(coord) {
+            if self.get_compressed(coord) {
                 continue;
             }
 
-            self.map[self.shape.arr_index(coord)] = true;
+            self.compressed_map[self.compressed_shape.arr_index(coord)] = true;
             let neighbors = coord.cardinal_neighbors();
             for neighbor in neighbors {
-                if self.shape.in_bounds(neighbor) {
+                if self.compressed_shape.in_bounds(neighbor) {
                     queue.push_back(neighbor);
                 }
             }
@@ -213,19 +259,37 @@ impl DigSite {
     }
 }
 
+fn get_compressed_position(
+    position: IntVector,
+    rows: &[Range<isize>],
+    columns: &[Range<isize>],
+) -> IntVector {
+    let x = columns
+        .iter()
+        .enumerate()
+        .find(|(_, range)| range.contains(&position.x))
+        .map(|it| it.0 as isize)
+        .expect(format!("No column found for {:?}", position).as_str());
+    let y = rows
+        .iter()
+        .enumerate()
+        .find(|(_, range)| range.contains(&position.y))
+        .map(|it| it.0 as isize)
+        .expect(format!("No column found for {:?}", position).as_str());
+    IntVector::new(x, y)
+}
+
 impl Display for DigSite {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(
-            &self
-                .shape
-                .format_char_grid(self.shape.coord_iter().map(|coord| {
-                    if self.get(coord) {
-                        '#'
-                    } else {
-                        '.'
-                    }
-                })),
-        )
+        f.write_str(&self.compressed_shape.format_char_grid(
+            self.compressed_shape.coord_iter().map(|coord| {
+                if self.get_compressed(coord) {
+                    '#'
+                } else {
+                    '.'
+                }
+            }),
+        ))
     }
 }
 
@@ -259,205 +323,6 @@ impl DigLine {
                     && coord.x >= self.start.x - self.length as isize
             }
         }
-    }
-}
-
-struct VirtualDigSite {
-    lines: Vec<DigLine>,
-    shape: SignedGridShape,
-}
-
-impl VirtualDigSite {
-    fn from_instructions(instructions: &[DigInstruction]) -> VirtualDigSite {
-        let mut current_position = IntVector::new(0, 0);
-        let mut bound_top_left = current_position;
-        let mut bound_bottom_right = current_position;
-        let lines = instructions
-            .iter()
-            .map(|instruction| {
-                let direction = match instruction.direction {
-                    DigDirection::Up => Direction::North,
-                    DigDirection::Down => Direction::South,
-                    DigDirection::Left => Direction::West,
-                    DigDirection::Right => Direction::East,
-                };
-                let length = instruction.distance;
-                let start = current_position;
-                current_position += direction.conv::<IntVector>() * length as isize;
-                if current_position.x < bound_top_left.x {
-                    bound_top_left.x = current_position.x;
-                }
-                if current_position.x > bound_bottom_right.x {
-                    bound_bottom_right.x = current_position.x;
-                }
-                if current_position.y < bound_top_left.y {
-                    bound_top_left.y = current_position.y;
-                }
-                if current_position.y > bound_bottom_right.y {
-                    bound_bottom_right.y = current_position.y;
-                }
-                DigLine {
-                    start,
-                    direction,
-                    length,
-                }
-            })
-            .collect();
-        VirtualDigSite {
-            lines,
-            shape: SignedGridShape::new(bound_top_left, bound_bottom_right),
-        }
-    }
-
-    fn subsector(&self, new_bounds: SignedGridShape) -> Self {
-        let lines = self
-            .lines
-            .iter()
-            .filter_map(|line| {
-                let start_contained = new_bounds.is_in_bounds(line.start);
-                let end = line.start + line.direction.as_vector() * line.length as isize;
-                let end_contained = new_bounds.is_in_bounds(end);
-
-                if !start_contained && !end_contained {
-                    return None;
-                }
-                if start_contained && end_contained {
-                    return Some(line.clone());
-                }
-
-                let new_start = if start_contained {
-                    line.start
-                } else {
-                    match line.direction {
-                        Direction::North => IntVector::new(line.start.x, new_bounds.bottom_right.y),
-                        Direction::South => IntVector::new(line.start.x, new_bounds.top_left.y),
-                        Direction::East => IntVector::new(new_bounds.top_left.x, line.start.y),
-                        Direction::West => IntVector::new(new_bounds.bottom_right.x, line.start.y),
-                    }
-                };
-                let start_difference = new_start.manhattan_distance(line.start);
-                let new_length = line.length - start_difference;
-                let new_end = match line.direction {
-                    Direction::North => IntVector::new(
-                        new_start.x,
-                        (new_start.y - new_length as isize).max(new_bounds.top_left.y),
-                    ),
-                    Direction::South => IntVector::new(
-                        new_start.x,
-                        (new_start.y + new_length as isize).min(new_bounds.bottom_right.y),
-                    ),
-                    Direction::East => IntVector::new(
-                        (new_start.x + new_length as isize).min(new_bounds.bottom_right.x),
-                        new_start.y,
-                    ),
-                    Direction::West => IntVector::new(
-                        (new_start.x - new_length as isize).max(new_bounds.top_left.x),
-                        new_start.y,
-                    ),
-                };
-                let new_length = new_start.manhattan_distance(new_end);
-
-                Some(DigLine {
-                    start: new_start,
-                    direction: line.direction,
-                    length: new_length,
-                })
-            })
-            .collect_vec();
-
-        VirtualDigSite {
-            lines,
-            shape: new_bounds,
-        }
-    }
-
-    fn perimeter(&self) -> usize {
-        self.lines.iter().map(|line| line.length).sum()
-    }
-
-    fn area(&self) -> usize {
-        // it's square if all the contained lines are along the edge
-        let is_square = self.lines.iter().all(|line| match line.direction {
-            Direction::North | Direction::South => {
-                let line_x = line.start.x;
-                line_x == self.shape.top_left.x || line_x == self.shape.bottom_right.x
-            }
-            Direction::East | Direction::West => {
-                let line_y = line.start.y;
-                line_y == self.shape.top_left.y || line_y == self.shape.bottom_right.y
-            }
-        });
-        if is_square {
-            return self.shape.bottom_right.x.abs_diff(self.shape.top_left.x)
-                + 1 * self.shape.bottom_right.y.abs_diff(self.shape.top_left.y)
-                + 1;
-        }
-
-        let midpoint = IntVector::new(
-            (self.shape.bottom_right.x + self.shape.top_left.x) / 2,
-            (self.shape.bottom_right.y + self.shape.top_left.y) / 2,
-        );
-
-        let split_vertex = self
-            .lines
-            .iter()
-            // .filter(|line| {
-            //     // don't choose a vertex right on the edge
-            //     line.start.x != self.shape.bottom_right.x
-            //         && line.start.y != self.shape.bottom_right.y
-            //         && line.start.x != self.shape.top_left.x
-            //         && line.start.y != self.shape.top_left.y
-            // })
-            .min_by_key(|line| line.start.manhattan_distance(midpoint))
-            .expect("nothing to split on");
-
-        dbg!(split_vertex);
-        let subsector_1_shape = match split_vertex.direction {
-            Direction::North => SignedGridShape::new(
-                self.shape.top_left,
-                IntVector::new(self.shape.bottom_right.x, split_vertex.start.y + 1),
-            ),
-            Direction::South => SignedGridShape::new(
-                IntVector::new(self.shape.top_left.x, split_vertex.start.y),
-                self.shape.bottom_right,
-            ),
-            Direction::East => SignedGridShape::new(
-                IntVector::new(split_vertex.start.x, self.shape.top_left.y),
-                self.shape.bottom_right,
-            ),
-            Direction::West => SignedGridShape::new(
-                self.shape.top_left,
-                IntVector::new(split_vertex.start.x + 1, self.shape.bottom_right.y),
-            ),
-        };
-        if subsector_1_shape == self.shape {
-            panic!("shape didn't change");
-        }
-        let subsector_1 = self.subsector(subsector_1_shape);
-
-        println!("{}", subsector_1);
-
-        return subsector_1.area();
-        return 0;
-    }
-}
-
-impl Display for VirtualDigSite {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let formatted = self
-            .shape
-            .format_char_grid(self.shape.coord_iter().map(|coord| {
-                let matching_line = self.lines.iter().find(|line| line.contains(coord));
-                let matching_line_direction = matching_line.map(|it| it.direction);
-                match matching_line_direction {
-                    Some(Direction::North) => '^',
-                    Some(Direction::South) => 'V',
-                    Some(Direction::East) => '>',
-                    Some(Direction::West) => '<',
-                    None => '.',
-                }
-            }));
-        f.write_str(&formatted)
     }
 }
 
@@ -495,7 +360,7 @@ mod test {
     fn test_parse() {
         let input = "R 6 (#70c710)";
         let expected = DigInstruction {
-            direction: DigDirection::Right,
+            direction: Direction::East,
             distance: 6,
             hex_color: "70c710".to_string(),
         };
@@ -513,17 +378,5 @@ mod test {
         let mut dig_site = DigSite::from_instructions(&sample_input());
         dig_site.dig_interior().unwrap();
         assert_eq!(dig_site.capacity(), 62);
-    }
-
-    #[test]
-    fn test_virtual_perimeter() {
-        let virtual_dig_site = VirtualDigSite::from_instructions(&sample_input());
-        assert_eq!(virtual_dig_site.perimeter(), 38);
-    }
-
-    #[test]
-    fn test_virtual_area() {
-        let virtual_dig_site = VirtualDigSite::from_instructions(&sample_input());
-        assert_eq!(virtual_dig_site.area(), 62);
     }
 }
