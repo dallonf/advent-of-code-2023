@@ -43,14 +43,7 @@ impl Day for Day20 {
 
     fn run_script(&self, name: &str) -> anyhow::Result<bool> {
         if name == "mermaid_diagram" {
-            let configuration = indoc! {"
-                broadcaster -> a
-                %a -> inv, con
-                &inv -> b
-                %b -> con
-                &con -> output
-            "}
-            .parse::<ModuleConfiguration>()?;
+            let configuration = puzzle_input()?;
             println!("{}", configuration.as_mermaid_diagram());
             return Ok(true);
         }
