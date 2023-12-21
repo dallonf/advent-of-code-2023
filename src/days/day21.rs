@@ -44,7 +44,11 @@ struct GardenMap {
 
 impl GardenMap {
     fn get(&self, coord: IntVector) -> Tile {
-        self.tiles[self.shape.arr_index(coord)]
+        let looped_coord = IntVector::new(
+            coord.x.rem_euclid(self.shape.width as isize),
+            coord.y.rem_euclid(self.shape.height as isize),
+        );
+        self.tiles[self.shape.arr_index(looped_coord)]
     }
 
     fn gardens_reachable(&self, num_steps: usize) -> usize {
@@ -134,5 +138,17 @@ mod test {
     fn test_gardens_reachable() {
         let map = sample_input();
         assert_eq!(map.gardens_reachable(6), 16);
+    }
+
+    #[test]
+    fn test_infinite_gardens() {
+        let map = sample_input();
+        assert_eq!(map.gardens_reachable(10), 50);
+        assert_eq!(map.gardens_reachable(50), 1594);
+        assert_eq!(map.gardens_reachable(100), 6536);
+        // the below are still too slow to run!
+        // assert_eq!(map.gardens_reachable(500), 167004);
+        // assert_eq!(map.gardens_reachable(1000), 668697);
+        // assert_eq!(map.gardens_reachable(5000), 16733044);
     }
 }
