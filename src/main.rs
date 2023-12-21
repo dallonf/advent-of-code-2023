@@ -28,6 +28,7 @@ mod days {
     pub mod day18;
     pub mod day19;
     pub mod day20;
+    pub mod day21;
 }
 
 lazy_static! {
@@ -52,6 +53,7 @@ lazy_static! {
         Box::new(days::day18::Day18),
         Box::new(days::day19::Day19),
         Box::new(days::day20::Day20),
+        Box::new(days::day21::Day21),
     ];
 }
 
