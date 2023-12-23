@@ -2,9 +2,12 @@
 
 use std::collections::HashSet;
 use std::str::FromStr;
+use std::time::Instant;
+
+use num::Integer;
 
 use crate::framework::grid::{GridShape, IntVector};
-use crate::framework::Day;
+use crate::framework::{format_duration, Day};
 use crate::prelude::*;
 
 fn puzzle_input() -> Result<GardenMap> {
@@ -24,6 +27,17 @@ impl Day for Day21 {
         }))
     }
 
+    #[cfg(feature = "slow_solutions")]
+    fn part2(&self) -> Option<Result<String>> {
+        Some(try_block(move || {
+            puzzle_input()?
+                .gardens_reachable(26501365)
+                .to_string()
+                .pipe(Ok)
+        }))
+    }
+
+    #[cfg(not(feature = "slow_solutions"))]
     fn part2(&self) -> Option<Result<String>> {
         None
     }
@@ -52,24 +66,55 @@ impl GardenMap {
     }
 
     fn gardens_reachable(&self, num_steps: usize) -> usize {
+        let mut last_checkpoint = Instant::now();
+
+        let mut visited_odd = HashSet::<IntVector>::new();
+        let mut visited_even = HashSet::<IntVector>::new();
+
         let mut frontier = HashSet::<IntVector>::new();
         frontier.insert(self.start_position);
-        for _ in 0..num_steps {
+        visited_even.insert(self.start_position);
+        for i in 0..num_steps {
             let mut new_frontier = HashSet::<IntVector>::with_capacity(frontier.capacity());
             for coord in &frontier {
                 for neighbor in coord.cardinal_neighbors() {
                     match self.get(neighbor) {
                         Tile::GardenPlot => {
-                            new_frontier.insert(neighbor);
+                            if !visited_even.contains(&neighbor) && !visited_odd.contains(&neighbor)
+                            {
+                                new_frontier.insert(neighbor);
+                                let next_step = i + 1;
+                                if next_step.is_even() {
+                                    visited_even.insert(neighbor);
+                                } else {
+                                    visited_odd.insert(neighbor);
+                                }
+                            }
                         }
                         Tile::Rock => {}
                     }
                 }
             }
             frontier = new_frontier;
+            if num_steps % 5000 == 0 {
+                let now = Instant::now();
+                let duration = format_duration(&now.duration_since(last_checkpoint));
+                println!(
+                    "Step {}: {} visited, {} frontier ({} elapsed since last checkpoint)",
+                    i,
+                    visited_even.len() + visited_odd.len(),
+                    frontier.len(),
+                    duration,
+                );
+                last_checkpoint = now;
+            }
         }
 
-        frontier.len()
+        if num_steps.is_even() {
+            visited_even.len()
+        } else {
+            visited_odd.len()
+        }
     }
 }
 
@@ -146,9 +191,9 @@ mod test {
         assert_eq!(map.gardens_reachable(10), 50);
         assert_eq!(map.gardens_reachable(50), 1594);
         assert_eq!(map.gardens_reachable(100), 6536);
+        assert_eq!(map.gardens_reachable(500), 167004);
+        assert_eq!(map.gardens_reachable(1000), 668697);
         // the below are still too slow to run!
-        // assert_eq!(map.gardens_reachable(500), 167004);
-        // assert_eq!(map.gardens_reachable(1000), 668697);
         // assert_eq!(map.gardens_reachable(5000), 16733044);
     }
 }

@@ -1,8 +1,8 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use crate::framework::Day;
 use clap::Parser;
 use framework::prelude;
+use framework::{format_duration, Day};
 use prelude::*;
 
 mod framework;
@@ -121,20 +121,4 @@ fn main() {
             }
         }
     }
-}
-
-fn format_duration(input: &Duration) -> String {
-    let total_seconds = input.as_secs();
-    let millis = input.as_millis() % 1000;
-    let minutes = total_seconds / 60;
-    let seconds = total_seconds % 60;
-    let mut output = "".to_string();
-    if minutes > 0 {
-        output += &format!("{}m ", minutes);
-    }
-    if seconds > 0 {
-        output += &format!("{}s ", seconds);
-    }
-    output += &format!("{}ms", millis);
-    output
 }
