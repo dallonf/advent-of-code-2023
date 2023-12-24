@@ -125,9 +125,11 @@ impl World {
         let mut highest_grounded_point = HashMap::<IntVector, BrickCube>::new();
         for (id, brick) in self.bricks.iter_mut() {
             let brick_lowest_z = brick.lowest_z();
+            let brick_highest_z = brick.highest_z();
             let horizontal_coords = (brick.0.x..=brick.1.x)
                 .flat_map(|x| (brick.0.y..=brick.1.y).map(move |y| IntVector::new(x, y)))
                 .collect_vec();
+
             let (stop_z, bricks_underneath) = {
                 let bricks_underneath = horizontal_coords
                     .iter()
@@ -154,7 +156,7 @@ impl World {
                 let cube_position = IntVector3 {
                     x: coord.x,
                     y: coord.y,
-                    z: stop_z,
+                    z: brick_highest_z - z_diff,
                 };
                 highest_grounded_point.insert(
                     coord,
@@ -190,7 +192,7 @@ impl World {
             None => return Some(false),
         };
         if supported_bricks.is_empty() {
-            return Some(true);
+            return Some(false);
         }
         let is_only_support = supported_bricks.iter().any(|supported_brick_id| {
             let supported_by = self.supported_by.get(supported_brick_id).unwrap();
@@ -240,7 +242,7 @@ impl World {
                 '?' // indicates multiple bricks
             } else if brick_ids.len() == 1 {
                 let id_idx = *brick_ids[0];
-                if id_idx > visible_ids.len() {
+                if id_idx >= visible_ids.len() {
                     '#' // indicates a brick with an index too large to render in a single char
                 } else {
                     visible_ids[id_idx]
@@ -324,11 +326,7 @@ mod test {
 
     #[test]
     fn test_part1() {
-        // not 1023
-        assert_eq!(
-            super::Day22.part1().unwrap().unwrap(),
-            "".to_string(),
-        );
+        assert_eq!(super::Day22.part1().unwrap().unwrap(), "411".to_string(),);
     }
 
     fn sample_input() -> World {
@@ -365,5 +363,84 @@ mod test {
         assert_eq!(world.is_load_bearing(5), Some(true)); // F
         assert_eq!(world.is_load_bearing(6), Some(false)); // G
         assert_eq!(world.find_non_load_bearing_bricks(), 5);
+    }
+
+    #[test]
+    fn test_no_overlap() {
+        let mut world = puzzle_input().unwrap();
+        world.apply_gravity();
+        let mut found = HashMap::<IntVector3, Vec<usize>>::new();
+        for (id, brick) in world.bricks.iter() {
+            let cubes = (brick.0.z..=brick.1.z)
+                .flat_map(|z| {
+                    (brick.0.x..=brick.1.x).flat_map(move |x| {
+                        (brick.0.y..=brick.1.y).map(move |y| IntVector3 { x, y, z })
+                    })
+                })
+                .collect_vec();
+            for coord in cubes {
+                found
+                    .entry(IntVector3 {
+                        x: coord.x,
+                        y: coord.y,
+                        z: coord.z,
+                    })
+                    .or_default()
+                    .push(*id);
+            }
+        }
+        let mut errors = Vec::new();
+        for (coord, ids) in found {
+            if ids.len() > 1 {
+                errors.push(format!("multiple IDs at coord {:?}: {:?}", coord, ids));
+            }
+        }
+        errors.sort();
+        assert_eq!(errors.len(), 0, "errors: {:#?}", errors);
+    }
+
+    #[test]
+    fn test_no_floating() {
+        let mut world = puzzle_input().unwrap();
+        world.apply_gravity();
+        let mut all_cubes = HashMap::<IntVector3, usize>::new();
+        for (id, brick) in world.bricks.iter() {
+            let cubes = (brick.0.z..=brick.1.z)
+                .flat_map(|z| {
+                    (brick.0.x..=brick.1.x).flat_map(move |x| {
+                        (brick.0.y..=brick.1.y).map(move |y| IntVector3 { x, y, z })
+                    })
+                })
+                .collect_vec();
+            for coord in cubes {
+                all_cubes.insert(coord, *id);
+            }
+        }
+        let mut floating_bricks: Vec<(usize, Brick)> = Vec::new();
+        for (id, brick) in world.bricks.iter() {
+            let cubes = (brick.0.z..=brick.1.z)
+                .flat_map(|z| {
+                    (brick.0.x..=brick.1.x).flat_map(move |x| {
+                        (brick.0.y..=brick.1.y).map(move |y| IntVector3 { x, y, z })
+                    })
+                })
+                .collect_vec();
+            let brick_is_floating = cubes.iter().all(|coord| {
+                let below = IntVector3 {
+                    x: coord.x,
+                    y: coord.y,
+                    z: coord.z - 1,
+                };
+                below.z > 0 && !all_cubes.contains_key(&below)
+            });
+            if brick_is_floating {
+                floating_bricks.push((*id, *brick));
+            }
+        }
+        assert!(
+            floating_bricks.is_empty(),
+            "floating bricks: {:?}",
+            floating_bricks
+        );
     }
 }
