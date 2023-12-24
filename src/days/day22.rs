@@ -1,6 +1,6 @@
 // Day 22: Sand Slabs
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write;
 use std::ops::RangeInclusive;
 use std::str::FromStr;
@@ -30,7 +30,16 @@ impl Day for Day22 {
     }
 
     fn part2(&self) -> Option<Result<String>> {
-        None
+        Some(try_block(move || {
+            let mut world = puzzle_input()?;
+            world.apply_gravity();
+            let chain_reaction_total = world
+                .bricks
+                .par_iter()
+                .map(|(id, _)| world.chain_reaction_size(*id))
+                .sum::<usize>();
+            Ok(chain_reaction_total.to_string())
+        }))
     }
 }
 
@@ -210,6 +219,51 @@ impl World {
             .count()
     }
 
+    fn chain_reaction_size(&self, disintegrated_brick_id: usize) -> usize {
+        let mut queue = VecDeque::new();
+        let mut fallen = HashSet::<usize>::new();
+
+        let supported_bricks = match { self.brick_support.get(&disintegrated_brick_id) } {
+            Some(supported_bricks) => supported_bricks,
+            None => return 0,
+        };
+        for supported_brick_id in supported_bricks {
+            queue.push_back(*supported_brick_id);
+        }
+
+        while let Some(next) = queue.pop_front() {
+            if fallen.contains(&next) {
+                continue;
+            }
+            let supported_by = self.supported_by.get(&next);
+            let supported_by_unfallen_blocks = supported_by
+                .map(|supported_by| {
+                    supported_by
+                        .iter()
+                        .filter(|supported_by_id| {
+                            !fallen.contains(supported_by_id)
+                                && **supported_by_id != disintegrated_brick_id
+                        })
+                        .count()
+                })
+                .unwrap_or(0);
+            if supported_by_unfallen_blocks > 0 {
+                continue;
+            }
+
+            fallen.insert(next);
+            let supported_bricks = match { self.brick_support.get(&next) } {
+                Some(supported_bricks) => supported_bricks,
+                None => continue,
+            };
+            for supported_brick_id in supported_bricks {
+                queue.push_back(*supported_brick_id);
+            }
+        }
+
+        fallen.len()
+    }
+
     fn debug_xz_plane(&self) -> String {
         let visible_ids = ('A'..'Z').chain('a'..'z').chain('0'..'9').collect_vec();
         if self.bricks.is_empty() {
@@ -328,6 +382,11 @@ mod test {
         assert_eq!(super::Day22.part1().unwrap().unwrap(), "411".to_string(),);
     }
 
+    #[test]
+    fn test_part2() {
+        assert_eq!(super::Day22.part2().unwrap().unwrap(), "47671".to_string(),);
+    }
+
     fn sample_input() -> World {
         indoc! {"
             1,0,1~1,2,1
@@ -441,5 +500,13 @@ mod test {
             "floating bricks: {:?}",
             floating_bricks
         );
+    }
+
+    #[test]
+    fn test_chain_reaction() {
+        let mut world = sample_input();
+        world.apply_gravity();
+        assert_eq!(world.chain_reaction_size(0), 6); // A
+        assert_eq!(world.chain_reaction_size(5), 1); // F
     }
 }
