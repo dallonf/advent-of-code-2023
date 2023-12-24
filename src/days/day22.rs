@@ -75,11 +75,9 @@ impl Brick {
     fn x_range(&self) -> RangeInclusive<isize> {
         self.0.x.min(self.1.x)..=self.0.x.max(self.1.x)
     }
-
     fn y_range(&self) -> RangeInclusive<isize> {
         self.0.y.min(self.1.y)..=self.0.y.max(self.1.y)
     }
-
     fn z_range(&self) -> RangeInclusive<isize> {
         self.0.z.min(self.1.z)..=self.0.z.max(self.1.z)
     }
@@ -289,6 +287,7 @@ impl World {
         }))
     }
 
+    #[allow(dead_code)]
     fn debug(&self) -> String {
         let xz_plane = self.debug_xz_plane();
         let yz_plane = self.debug_yz_plane();
